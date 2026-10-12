@@ -26,6 +26,7 @@ import { toast } from "@/hooks/use-toast";
 
 import { kindOf, fileSize } from "./message-attachments";
 import { PollComposer, type NewPoll } from "./poll-composer";
+import { useProjectView } from "@/components/project/project-views";
 import { CodeEditor, type CodeEditorHandle } from "./code-editor";
 import { highlight, normalizeLang } from "@/lib/highlight";
 
@@ -61,6 +62,9 @@ export const ChatInput = ({
 }: ChatInputProps) => {
   const { socket } = useSocket();
   const qc = useQueryClient();
+  // In a project's Files/Docs tab, dropped files belong to those tabs, not the message box.
+  const view = useProjectView();
+  pageDrop = pageDrop && view === "chat";
   const replyKey = threadId ? `thread:${threadId}` : chatId;
   const replyTo = useComposerStore((s) => s.replyTo[replyKey] ?? null);
   const setReplyTo = useComposerStore((s) => s.setReplyTo);

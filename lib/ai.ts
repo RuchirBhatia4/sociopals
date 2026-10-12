@@ -132,14 +132,20 @@ export async function runAgent(args: {
   system: string;
   history: ChatTurn[];
   host: ToolHost;
+  /** images attached to the task (designs, screenshots), shown with the latest message */
+  images?: string[];
 }): Promise<{ text: string; proposal: Proposal | null }> {
   return args.provider === "ANTHROPIC" ? runClaude(args) : runOpenAI(args);
 }
 
-async function runClaude({ key, model, system, history, host }: Parameters<typeof runAgent>[0]) {
+async function runClaude({ key, model, system, history, host, images = [] }: Parameters<typeof runAgent>[0]) {
   const client = new Anthropic({ apiKey: key });
   const tools: Anthropic.Tool[] = TOOLS.map((t) => ({ name: t.name, description: t.description, input_schema: t.schema as any }));
-  const messages: Anthropic.MessageParam[] = history.map((h) => ({ role: h.role, content: h.content }));
+  const messages: Anthropic.MessageParam[] = history.map((h, i) =>
+    i === history.length - 1 && h.role === "user" && images.length
+      ? { role: "user", content: [{ type: "text", text: h.content }, ...images.map((url) => ({ type: "image" as const, source: { type: "url" as const, url } }))] }
+      : { role: h.role, content: h.content }
+  );
   let proposal: Proposal | null = null;
   const texts: string[] = [];
 
@@ -176,9 +182,16 @@ async function runClaude({ key, model, system, history, host }: Parameters<typeo
   return { text: texts.join("\n\n") || (proposal ? "Here are the changes." : "(no reply)"), proposal };
 }
 
-async function runOpenAI({ key, model, system, history, host }: Parameters<typeof runAgent>[0]) {
+async function runOpenAI({ key, model, system, history, host, images = [] }: Parameters<typeof runAgent>[0]) {
   const tools = TOOLS.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.schema } }));
-  const messages: any[] = [{ role: "system", content: system }, ...history.map((h) => ({ role: h.role, content: h.content }))];
+  const messages: any[] = [
+    { role: "system", content: system },
+    ...history.map((h, i) =>
+      i === history.length - 1 && h.role === "user" && images.length
+        ? { role: "user", content: [{ type: "text", text: h.content }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))] }
+        : { role: h.role, content: h.content }
+    ),
+  ];
   let proposal: Proposal | null = null;
   const texts: string[] = [];
 

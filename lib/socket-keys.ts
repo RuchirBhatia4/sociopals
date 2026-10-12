@@ -23,6 +23,10 @@ export const activityKey = (serverId: string) => `server:${serverId}:activity`;
 export const directKey = (memberId: string) => `member:${memberId}:direct`;
 /** Project tasks changed in a channel (created, assigned, branch, PR, status). */
 export const taskKey = (channelId: string) => `project:${channelId}:tasks`;
+/** Project workspace changed (files, folders, docs, task attachments). */
+export const workspaceKey = (channelId: string) => `project:${channelId}:workspace`;
+/** Who is editing which doc right now. */
+export const docEditingKey = (channelId: string) => `project:${channelId}:doc-editing`;
 /** A new inbox notification for the signed-in person. */
 export const NOTIFY_EVENT = "notify";
 /** Someone came online / went offline / changed status, in a server. */

@@ -135,14 +135,17 @@ model Channel {
   scheduled       ScheduledMessage[]
 
   // Project mode: a GitHub repo, tasks, branches and AI help
-  isProject         Boolean        @default(false)
+  isProject         Boolean         @default(false)
   repoOwner         String?
   repoName          String?
   repoDefaultBranch String?
   repoWebhookId     String?
-  repoWebhookSecret String?        @db.Text
+  repoWebhookSecret String?         @db.Text
   tasks             Task[]
   projectSetups     ProjectSetup[]
+  projectFolders    ProjectFolder[]
+  projectFiles      ProjectFile[]
+  projectDocs       ProjectDoc[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -563,21 +566,22 @@ enum TaskStatus {
 }
 
 model Task {
-  id          String          @id @default(uuid())
+  id          String           @id @default(uuid())
   number      Int
   channelId   String
-  channel     Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  channel     Channel          @relation(fields: [channelId], references: [id], onDelete: Cascade)
   title       String
-  description String?         @db.Text
-  status      TaskStatus      @default(TODO)
+  description String?          @db.Text
+  status      TaskStatus       @default(TODO)
   createdById String
   assigneeId  String?
   branch      String?
   prNumber    Int?
-  prUrl       String?         @db.Text
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  prUrl       String?          @db.Text
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
   aiMessages  TaskAiMessage[]
+  attachments TaskAttachment[]
 
   @@unique([channelId, number])
   @@index([assigneeId, status])
@@ -610,4 +614,102 @@ model CodeRun {
   createdAt DateTime @default(now())
 
   @@index([profileId, createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Project workspace: files (with versions), docs, and what's attached to tasks
+
+model ProjectFolder {
+  id          String          @id @default(uuid())
+  channelId   String
+  channel     Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  parentId    String?
+  parent      ProjectFolder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  children    ProjectFolder[] @relation("FolderTree")
+  name        String
+  createdById String
+  createdAt   DateTime        @default(now())
+  files       ProjectFile[]
+
+  @@index([channelId, parentId])
+}
+
+model ProjectFile {
+  id          String               @id @default(uuid())
+  channelId   String
+  channel     Channel              @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  folderId    String?
+  folder      ProjectFolder?       @relation(fields: [folderId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  name        String
+  // "upload" (Files tab) or "chat" (shared in a message)
+  source      String               @default("upload")
+  messageId   String?
+  createdById String
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  versions    ProjectFileVersion[]
+  attachedTo  TaskAttachment[]
+
+  @@index([channelId, folderId])
+  @@index([messageId])
+}
+
+model ProjectFileVersion {
+  id           String      @id @default(uuid())
+  fileId       String
+  file         ProjectFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  url          String      @db.Text
+  size         Int         @default(0)
+  type         String
+  uploadedById String
+  createdAt    DateTime    @default(now())
+
+  @@index([fileId, createdAt])
+}
+
+model ProjectDoc {
+  id          String               @id @default(uuid())
+  channelId   String
+  channel     Channel              @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  title       String
+  content     String               @db.LongText
+  isOverview  Boolean              @default(false)
+  version     Int                  @default(1)
+  createdById String
+  updatedById String
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  revisions   ProjectDocRevision[]
+  attachedTo  TaskAttachment[]
+
+  @@index([channelId])
+}
+
+// Earlier versions of a doc, kept so nobody's work is lost.
+model ProjectDocRevision {
+  id         String     @id @default(uuid())
+  docId      String
+  doc        ProjectDoc @relation(fields: [docId], references: [id], onDelete: Cascade)
+  title      String
+  content    String     @db.LongText
+  editedById String
+  createdAt  DateTime   @default(now())
+
+  @@index([docId, createdAt])
+}
+
+model TaskAttachment {
+  id        String       @id @default(uuid())
+  taskId    String
+  task      Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fileId    String?
+  file      ProjectFile? @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  docId     String?
+  doc       ProjectDoc?  @relation(fields: [docId], references: [id], onDelete: Cascade)
+  addedById String
+  createdAt DateTime     @default(now())
+
+  @@index([taskId])
+  @@index([fileId])
+  @@index([docId])
 }

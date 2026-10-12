@@ -10,6 +10,7 @@ import { ChatLayout } from "@/components/chat/chat-layout";
 import { MediaRoom } from "@/components/media-room";
 import { ProjectGate } from "@/components/project/project-gate";
 import { PendingTasks } from "@/components/project/pending-tasks";
+import { ProjectViews } from "@/components/project/project-views";
 import { db } from "@/lib/db";
 import { chatAccess } from "@/lib/access";
 import { can, postBlockReason } from "@/lib/permissions";
@@ -138,6 +139,6 @@ const ChannelIdPage = async ({
 }
  
 const ProjectWrap = ({ isProject, channelId, children }: { isProject: boolean; channelId: string; children: React.ReactNode }) =>
-  isProject ? <ProjectGate channelId={channelId}>{children}</ProjectGate> : <>{children}</>;
+  isProject ? <ProjectGate channelId={channelId}><ProjectViews channelId={channelId}>{children}</ProjectViews></ProjectGate> : <>{children}</>;
 
 export default ChannelIdPage;

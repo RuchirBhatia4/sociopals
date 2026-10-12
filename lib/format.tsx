@@ -15,7 +15,7 @@ type Ctx = { meId?: string; onMention?: (memberId: string) => void };
 const INLINE =
   /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(~~[^~\n]+~~)|(\*[^*\n]+\*|(?<![\w])_[^_\n]+_(?![\w]))|(@\[[^\]]{1,80}\]\([0-9a-f-]{36}\))|(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"])/g;
 
-function inline(text: string, ctx: Ctx, keyBase: string): ReactNode[] {
+export function inline(text: string, ctx: Ctx, keyBase: string): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   let i = 0;

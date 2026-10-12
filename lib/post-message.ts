@@ -1,6 +1,7 @@
 import { Channel, Conversation, Member, MemberRole, Prisma, Profile, Server } from "@prisma/client";
 
 import { db } from "@/lib/db";
+import { collectChatFiles } from "@/lib/workspace";
 import { getIO } from "@/lib/io";
 import { channelAudience } from "@/lib/access";
 import { can, postBlockReason } from "@/lib/permissions";
@@ -17,6 +18,7 @@ import {
   serverRoom,
   threadKey,
   updateKey,
+  workspaceKey,
 } from "@/lib/socket-keys";
 
 export class PostError extends Error {
@@ -186,6 +188,11 @@ export async function postChannelMessage(args: {
   }
 
   attachLinkPreview("channel", message.id, channel.id, content);
+  if (channel.isProject && attachments.length) {
+    collectChatFiles({ channelId: channel.id, messageId: message.id, memberId: member.id, attachments })
+      .then(() => io?.to(chatRoom(channel.id)).emit(workspaceKey(channel.id), { type: "files" }))
+      .catch((e) => console.log("[WORKSPACE_COLLECT]", e));
+  }
   if (!args.system) {
     notifyChannelMessage({
       message: { ...message, webhookName: args.webhook?.name },

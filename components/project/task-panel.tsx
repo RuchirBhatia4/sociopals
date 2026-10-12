@@ -21,6 +21,7 @@ import { renderMessage } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 import { BranchDialog } from "./task-dialogs";
+import { TaskAttachments } from "./task-attachments";
 import { ProposalView, type ProposalData } from "./proposal-view";
 
 type AiMsg = { id: string; role: "user" | "assistant"; content: string; aiLabel: string | null; proposal: ProposalData | null; appliedAt: string | null; commitSha: string | null; createdAt: string };
@@ -223,6 +224,8 @@ export const TaskPanel = ({ channelId, taskId }: { channelId: string; taskId: st
           )}
           {ghBlocked && <p className="text-xs text-amber-300">{ghBlocked}</p>}
         </div>
+
+        <TaskAttachments channelId={channelId} taskId={taskId} />
 
         {/* AI */}
         <div className="p-4">

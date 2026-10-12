@@ -15,6 +15,7 @@ import {
   profileRoom,
   serverRoom,
   typingKey,
+  docEditingKey,
   type Presence,
   type Typing,
 } from "@/lib/socket-keys";
@@ -87,6 +88,18 @@ const ioHandler = (req: NextApiRequest, res: NextApiResponseServerIo) => {
           name: String(socket.data.name || "Someone").slice(0, 60),
           typing: !!t.typing,
         } satisfies Typing);
+      });
+
+      // "Sam is editing this doc": relayed to others viewing the project.
+      socket.on("doc:editing", (e: { channelId?: string; docId?: string; editing?: boolean }) => {
+        if (!e || typeof e.channelId !== "string" || typeof e.docId !== "string") return;
+        if (!socket.rooms.has(chatRoom(e.channelId))) return;
+        socket.to(chatRoom(e.channelId)).emit(docEditingKey(e.channelId), {
+          docId: e.docId,
+          profileId,
+          name: String(socket.data.name || "Someone").slice(0, 60),
+          editing: !!e.editing,
+        });
       });
 
       socket.on("disconnect", async () => {
