@@ -13,6 +13,11 @@ import { DeleteChannelModal } from "@/components/modals/delete-channel-modal";
 import { EditChannelModal } from "@/components/modals/edit-channel-modal";
 import { MessageFileModal } from "@/components/modals/message-file-modal";
 import { DeleteMessageModal } from "@/components/modals/delete-message-modal";
+import { ChannelSettingsModal } from "@/components/modals/channel-settings-modal";
+import { ServerSettingsModal } from "@/components/modals/server-settings-modal";
+import { CreateGroupDmModal } from "@/components/modals/create-group-dm-modal";
+import { SettingsModal } from "@/components/modals/settings-modal";
+import { Toaster } from "@/components/toaster";
 
 export const ModalProvider = () => {
   const [isMounted, setIsMounted] = useState(false);
@@ -38,6 +43,11 @@ export const ModalProvider = () => {
       <EditChannelModal />
       <MessageFileModal />
       <DeleteMessageModal />
+      <ChannelSettingsModal />
+      <ServerSettingsModal />
+      <CreateGroupDmModal />
+      <SettingsModal />
+      <Toaster />
     </>
   )
 }

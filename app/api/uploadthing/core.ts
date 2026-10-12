@@ -15,7 +15,18 @@ export const ourFileRouter = {
     .onUploadComplete(() => { }),
   messageFile: f(["image", "pdf"])
     .middleware(() => handleAuth())
-    .onUploadComplete(() => { })
+    .onUploadComplete(() => { }),
+  // Composer attachments: drag and drop, paste, or pick up to 10 at once.
+  chatAttachment: f({
+    image: { maxFileSize: "16MB", maxFileCount: 10 },
+    video: { maxFileSize: "64MB", maxFileCount: 4 },
+    audio: { maxFileSize: "16MB", maxFileCount: 10 },
+    pdf: { maxFileSize: "16MB", maxFileCount: 10 },
+    text: { maxFileSize: "4MB", maxFileCount: 10 },
+    blob: { maxFileSize: "16MB", maxFileCount: 10 },
+  })
+    .middleware(() => handleAuth())
+    .onUploadComplete(() => { }),
 } satisfies FileRouter;
 
 export type OurFileRouter = typeof ourFileRouter;

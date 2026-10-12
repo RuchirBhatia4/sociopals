@@ -31,13 +31,23 @@ export const SocketProvider = ({
   const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
-    const socketInstance = new (ClientIO as any)(process.env.NEXT_PUBLIC_SITE_URL!, {
+    const socketInstance = new (ClientIO as any)(process.env.NEXT_PUBLIC_SITE_URL || window.location.origin, {
       path: "/api/socket/io",
       addTrailingSlash: false,
+      withCredentials: true,
     });
 
     socketInstance.on("connect", () => {
       setIsConnected(true);
+    });
+
+    // The server refuses connections without a valid session. Sessions refresh
+    // every minute, so try again shortly instead of giving up.
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    socketInstance.on("connect_error", () => {
+      setIsConnected(false);
+      clearTimeout(retry);
+      retry = setTimeout(() => { if (!socketInstance.connected) socketInstance.connect(); }, 4000);
     });
 
     socketInstance.on("disconnect", () => {
@@ -47,6 +57,7 @@ export const SocketProvider = ({
     setSocket(socketInstance);
 
     return () => {
+      clearTimeout(retry);
       socketInstance.disconnect();
     }
   }, []);

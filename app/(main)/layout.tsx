@@ -1,4 +1,5 @@
 import { NavigationSidebar } from "@/components/navigation/navigation-sidebar";
+import { NotificationProvider } from "@/components/providers/notification-provider";
 
 const MainLayout = async ({
   children
@@ -7,10 +8,11 @@ const MainLayout = async ({
 }) => {
   return (
     <div className="h-full">
-      <div className="hidden md:flex h-full w-[72px] z-30 flex-col fixed inset-y-0">
+      <NotificationProvider />
+      <div className="hidden md:flex h-full w-[68px] z-30 flex-col fixed inset-y-0">
         <NavigationSidebar />
       </div>
-      <main className="md:pl-[72px] h-full">
+      <main className="md:pl-[68px] h-full">
         {children}
       </main>
     </div>

@@ -1,0 +1,5 @@
+# HTTPS certificates are automatic. Websockets (live chat) pass straight through.
+{$SITE_HOST} {
+	encode gzip
+	reverse_proxy app:3000
+}

@@ -12,7 +12,8 @@ import { ServerSidebar } from "@/components/server/server-sidebar";
 export const MobileToggle = ({
   serverId
 }: {
-  serverId: string;
+  /** without a server (inbox, saved) only the rail is shown */
+  serverId?: string;
 }) => {
   return (
     <Sheet>
@@ -22,10 +23,10 @@ export const MobileToggle = ({
         </Button>
       </SheetTrigger>
       <SheetContent side="left" className="p-0 flex gap-0">
-        <div className="w-[72px]">
+        <div className="w-[68px]">
           <NavigationSidebar />
         </div>
-        <ServerSidebar serverId={serverId} />
+        {serverId && <ServerSidebar serverId={serverId} />}
       </SheetContent>
     </Sheet>
   )

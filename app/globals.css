@@ -8,67 +8,89 @@ body,
   height: 100%;
 }
 
+/*
+  Design tokens. Every colour in the app comes from here, so light and dark
+  stay consistent and a theme change is one edit. Values are "H S% L%" for
+  Tailwind's hsl(var(--x) / <alpha>) pattern.
+
+  Surfaces, from back to front: rail (server list) -> sidebar (channels) ->
+  background (chat) -> elevated (menus, cards, composer).
+*/
 @layer base {
   :root {
+    --rail: 240 6% 93%;
+    --sidebar: 240 6% 96.5%;
     --background: 0 0% 100%;
-    --foreground: 20 14.3% 4.1%;
+    --elevated: 0 0% 100%;
+    --foreground: 240 10% 10%;
 
     --card: 0 0% 100%;
-    --card-foreground: 20 14.3% 4.1%;
-
+    --card-foreground: 240 10% 10%;
     --popover: 0 0% 100%;
-    --popover-foreground: 20 14.3% 4.1%;
+    --popover-foreground: 240 10% 10%;
 
-    --primary: 24 9.8% 10%;
-    --primary-foreground: 60 9.1% 97.8%;
+    --primary: 240 10% 10%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 5% 94%;
+    --secondary-foreground: 240 10% 10%;
+    --muted: 240 5% 94%;
+    --muted-foreground: 240 4% 40%;
+    --accent: 240 5% 93%;
+    --accent-foreground: 240 10% 10%;
 
-    --secondary: 60 4.8% 95.9%;
-    --secondary-foreground: 24 9.8% 10%;
+    /* SocioPals mint: brand actions, active states, unread badges */
+    --brand: 162 84% 33%;
+    --brand-foreground: 0 0% 100%;
+    --brand-soft: 162 70% 94%;
 
-    --muted: 60 4.8% 95.9%;
-    --muted-foreground: 25 5.3% 44.7%;
+    /* messages that mention you */
+    --mention: 38 92% 50%;
+    --mention-soft: 45 100% 94%;
 
-    --accent: 60 4.8% 95.9%;
-    --accent-foreground: 24 9.8% 10%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 60 9.1% 97.8%;
+    --border: 240 6% 89%;
+    --input: 240 6% 89%;
+    --ring: 162 84% 33%;
 
-    --border: 20 5.9% 90%;
-    --input: 20 5.9% 90%;
-    --ring: 20 14.3% 4.1%;
-
-    --radius: 0.5rem;
+    --radius: 0.6rem;
   }
 
   .dark {
-    --background: 20 14.3% 4.1%;
-    --foreground: 60 9.1% 97.8%;
+    --rail: 225 12% 5%;
+    --sidebar: 225 11% 7.5%;
+    --background: 225 10% 10%;
+    --elevated: 225 9% 13.5%;
+    --foreground: 220 14% 92%;
 
-    --card: 20 14.3% 4.1%;
-    --card-foreground: 60 9.1% 97.8%;
+    --card: 225 9% 13.5%;
+    --card-foreground: 220 14% 92%;
+    --popover: 225 9% 13%;
+    --popover-foreground: 220 14% 92%;
 
-    --popover: 20 14.3% 4.1%;
-    --popover-foreground: 60 9.1% 97.8%;
+    --primary: 220 14% 92%;
+    --primary-foreground: 225 10% 10%;
+    --secondary: 225 8% 16%;
+    --secondary-foreground: 220 14% 92%;
+    --muted: 225 8% 16%;
+    --muted-foreground: 220 8% 62%;
+    --accent: 225 8% 17%;
+    --accent-foreground: 220 14% 92%;
 
-    --primary: 60 9.1% 97.8%;
-    --primary-foreground: 24 9.8% 10%;
+    --brand: 163 78% 46%;
+    --brand-foreground: 165 80% 8%;
+    --brand-soft: 163 50% 14%;
 
-    --secondary: 12 6.5% 15.1%;
-    --secondary-foreground: 60 9.1% 97.8%;
+    --mention: 40 95% 58%;
+    --mention-soft: 40 60% 13%;
 
-    --muted: 12 6.5% 15.1%;
-    --muted-foreground: 24 5.4% 63.9%;
+    --destructive: 0 70% 56%;
+    --destructive-foreground: 0 0% 98%;
 
-    --accent: 12 6.5% 15.1%;
-    --accent-foreground: 60 9.1% 97.8%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 60 9.1% 97.8%;
-
-    --border: 12 6.5% 15.1%;
-    --input: 12 6.5% 15.1%;
-    --ring: 24 5.7% 82.9%;
+    --border: 225 8% 17%;
+    --input: 225 8% 19%;
+    --ring: 163 78% 46%;
   }
 }
 
@@ -78,6 +100,87 @@ body,
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+
+  /* Visible keyboard focus everywhere, never on mouse click. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-1 ring-offset-background;
   }
 }
+
+/*
+  Personal layout preferences (set from the settings menu, stored per browser).
+  Nothing is forced on anyone: compact/cozy density and round/square avatars.
+*/
+:root {
+  --msg-pad: 0.5rem;
+  --msg-gap: 0.125rem;
+  --avatar-radius: 9999px;
+}
+:root[data-density="compact"] {
+  --msg-pad: 0.2rem;
+  --msg-gap: 0;
+}
+:root[data-avatar="square"] {
+  --avatar-radius: 0.6rem;
+}
+.avatar-shape {
+  border-radius: var(--avatar-radius);
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+}
+
+/* A message you jumped to glows for a moment. */
+@keyframes flash-highlight {
+  0%, 30% { background-color: hsl(var(--brand) / 0.18); box-shadow: inset 3px 0 0 hsl(var(--brand)); }
+  100% { background-color: transparent; box-shadow: inset 3px 0 0 transparent; }
+}
+.flash-highlight {
+  animation: flash-highlight 1.6s ease-out;
+}
+
+/* Soft brand glow behind important surfaces (catch-up, empty states). */
+.glow-brand {
+  background-image: radial-gradient(120% 140% at 0% 0%, hsl(var(--brand) / 0.14), transparent 55%),
+    radial-gradient(120% 140% at 100% 100%, hsl(265 90% 65% / 0.10), transparent 55%);
+}
+
+/* ---------- Code: editor and message blocks (highlight.js tokens) ---------- */
+:root {
+  --code-bg: 220 20% 97%;
+  --tok-keyword: 280 60% 45%;
+  --tok-string: 140 50% 32%;
+  --tok-number: 25 80% 40%;
+  --tok-comment: 220 10% 50%;
+  --tok-fn: 215 70% 42%;
+  --tok-type: 180 60% 30%;
+  --tok-attr: 200 70% 38%;
+}
+.dark {
+  --code-bg: 225 14% 9%;
+  --tok-keyword: 286 60% 72%;
+  --tok-string: 95 38% 62%;
+  --tok-number: 29 54% 61%;
+  --tok-comment: 220 10% 50%;
+  --tok-fn: 207 82% 66%;
+  --tok-type: 187 47% 55%;
+  --tok-attr: 39 67% 69%;
+}
+.hljs { color: hsl(var(--foreground) / 0.92); background: transparent; }
+.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-built_in.hljs-keyword, .hljs-meta .hljs-keyword { color: hsl(var(--tok-keyword)); }
+.hljs-string, .hljs-regexp, .hljs-addition, .hljs-template-tag { color: hsl(var(--tok-string)); }
+.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-variable.constant_ { color: hsl(var(--tok-number)); }
+.hljs-comment, .hljs-quote, .hljs-deletion { color: hsl(var(--tok-comment)); font-style: italic; }
+.hljs-title.function_, .hljs-title, .hljs-section { color: hsl(var(--tok-fn)); }
+.hljs-built_in, .hljs-type, .hljs-title.class_, .hljs-class .hljs-title { color: hsl(var(--tok-type)); }
+.hljs-attr, .hljs-attribute, .hljs-property, .hljs-params, .hljs-name, .hljs-selector-class, .hljs-selector-id { color: hsl(var(--tok-attr)); }
+.hljs-meta, .hljs-doctag { color: hsl(var(--tok-comment)); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }

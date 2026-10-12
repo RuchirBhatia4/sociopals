@@ -30,8 +30,8 @@ export const ChatVideoButton = () => {
 
   return (
     <ActionTooltip side="bottom" label={tooltipLabel}>
-      <button onClick={onClick} className="hover:opacity-75 transition mr-4">
-        <Icon className="h-6 w-6 text-zinc-500 dark:text-zinc-400" />
+      <button onClick={onClick} aria-label={tooltipLabel} className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition">
+        <Icon className="h-5 w-5" />
       </button>
     </ActionTooltip>
   )

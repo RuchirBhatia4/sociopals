@@ -1,0 +1,18 @@
+[Unit]
+Description=Sociopals code runner
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+User=coderunner
+EnvironmentFile=/etc/code-runner.env
+ExecStart=/usr/bin/node /opt/code-runner/server.mjs
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/tmp
+PrivateTmp=false
+
+[Install]
+WantedBy=multi-user.target
