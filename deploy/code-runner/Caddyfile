@@ -1,0 +1,14 @@
+{{HOST}} {
+	encode gzip
+	# Only the runner's two endpoints (plus a health check) are exposed.
+	@api path /run /languages /health
+	handle @api {
+		reverse_proxy 127.0.0.1:2358
+	}
+	handle {
+		respond 404
+	}
+	request_body {
+		max_size 256KB
+	}
+}

@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
-import { DirectMessage } from "@prisma/client";
 
 import { currentProfile } from "@/lib/current-profile";
 import { db } from "@/lib/db";
+import { messageInclude, MESSAGES_BATCH } from "@/lib/message-include";
 
-const MESSAGES_BATCH = 10;
 
 export async function GET(
   req: Request
@@ -24,47 +23,25 @@ export async function GET(
       return new NextResponse("Conversation ID missing", { status: 400 });
     }
 
-    let messages: DirectMessage[] = [];
-
-    if (cursor) {
-      messages = await db.directMessage.findMany({
-        take: MESSAGES_BATCH,
-        skip: 1,
-        cursor: {
-          id: cursor,
-        },
-        where: {
-          conversationId,
-        },
-        include: {
-          member: {
-            include: {
-              profile: true,
-            }
-          }
-        },
-        orderBy: {
-          createdAt: "desc",
-        }
-      })
-    } else {
-      messages = await db.directMessage.findMany({
-        take: MESSAGES_BATCH,
-        where: {
-          conversationId,
-        },
-        include: {
-          member: {
-            include: {
-              profile: true,
-            }
-          }
-        },
-        orderBy: {
-          createdAt: "desc",
-        }
-      });
+    // Only the two people in a conversation may read it.
+    const conversation = await db.conversation.findFirst({
+      where: {
+        id: conversationId,
+        OR: [{ memberOne: { profileId: profile.id } }, { memberTwo: { profileId: profile.id } }],
+      },
+      select: { id: true },
+    });
+    if (!conversation) {
+      return new NextResponse("Not found", { status: 404 });
     }
+
+    const messages = await db.directMessage.findMany({
+      take: MESSAGES_BATCH,
+      ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),
+      where: { conversationId },
+      include: messageInclude,
+      orderBy: { createdAt: "desc" },
+    });
 
     let nextCursor = null;
 

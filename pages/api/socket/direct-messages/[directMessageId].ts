@@ -1,10 +1,17 @@
 import { NextApiRequest } from "next";
-import { MemberRole } from "@prisma/client";
 
 import { NextApiResponseServerIo } from "@/types";
 import { currentProfilePages } from "@/lib/current-profile-pages";
 import { db } from "@/lib/db";
+import { getIO } from "@/lib/io";
+import { messageInclude } from "@/lib/message-include";
+import { chatRoom, updateKey } from "@/lib/socket-keys";
 
+/**
+ * One direct message, ?conversationId=. Only the two people in the
+ * conversation can reach it, and only the author can edit or delete.
+ *   PATCH { content } | PATCH { pinned: boolean } | DELETE
+ */
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponseServerIo,
@@ -15,133 +22,45 @@ export default async function handler(
 
   try {
     const profile = await currentProfilePages(req);
-    const { directMessageId, conversationId } = req.query;
-    const { content } = req.body;
-
-    if (!profile) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    if (!conversationId) {
-      return res.status(400).json({ error: "Conversation ID missing" });
-    }
+    const { directMessageId, conversationId } = req.query as Record<string, string>;
+    if (!profile) return res.status(401).json({ error: "Unauthorized" });
+    if (!conversationId) return res.status(400).json({ error: "Conversation ID missing" });
 
     const conversation = await db.conversation.findFirst({
       where: {
-        id: conversationId as string,
-        OR: [
-          {
-            memberOne: {
-              profileId: profile.id,
-            }
-          },
-          {
-            memberTwo: {
-              profileId: profile.id,
-            }
-          }
-        ]
+        id: conversationId,
+        OR: [{ memberOne: { profileId: profile.id } }, { memberTwo: { profileId: profile.id } }],
       },
-      include: {
-        memberOne: {
-          include: {
-            profile: true,
-          }
-        },
-        memberTwo: {
-          include: {
-            profile: true,
-          }
-        }
-      }
-    })
-
-    if (!conversation) {
-      return res.status(404).json({ error: "Conversation not found" });
-    }
+      include: { memberOne: true, memberTwo: true },
+    });
+    if (!conversation) return res.status(404).json({ error: "Conversation not found" });
 
     const member = conversation.memberOne.profileId === profile.id ? conversation.memberOne : conversation.memberTwo;
+    const existing = await db.directMessage.findFirst({ where: { id: directMessageId, conversationId } });
+    if (!existing || existing.deleted) return res.status(404).json({ error: "Message not found" });
 
-    if (!member) {
-      return res.status(404).json({ error: "Member not found" });
-    }
-
-    let directMessage = await db.directMessage.findFirst({
-      where: {
-        id: directMessageId as string,
-        conversationId: conversationId as string,
-      },
-      include: {
-        member: {
-          include: {
-            profile: true,
-          }
-        }
-      }
-    })
-
-    if (!directMessage || directMessage.deleted) {
-      return res.status(404).json({ error: "Message not found" });
-    }
-
-    const isMessageOwner = directMessage.memberId === member.id;
-    const isAdmin = member.role === MemberRole.ADMIN;
-    const isModerator = member.role === MemberRole.MODERATOR;
-    const canModify = isMessageOwner || isAdmin || isModerator;
-
-    if (!canModify) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
+    const isOwner = existing.memberId === member.id;
+    const body = req.body ?? {};
+    let data: Record<string, unknown> | null = null;
 
     if (req.method === "DELETE") {
-      directMessage = await db.directMessage.update({
-        where: {
-          id: directMessageId as string,
-        },
-        data: {
-          fileUrl: null,
-          content: "This message has been deleted.",
-          deleted: true,
-        },
-        include: {
-          member: {
-            include: {
-              profile: true,
-            }
-          }
-        }
-      })
+      if (!isOwner) return res.status(403).json({ error: "You can only delete your own messages" });
+      data = { fileUrl: null, content: "This message has been deleted.", deleted: true, pinnedAt: null, linkPreview: null };
+      await db.attachment.deleteMany({ where: { directMessageId } });
+    } else if (typeof body.content === "string") {
+      if (!isOwner) return res.status(403).json({ error: "You can only edit your own messages" });
+      if (!body.content.trim()) return res.status(400).json({ error: "Message is empty" });
+      data = { content: body.content.slice(0, 4000), editedAt: new Date() };
+    } else if (typeof body.pinned === "boolean") {
+      data = { pinnedAt: body.pinned ? new Date() : null };
     }
+    if (!data) return res.status(400).json({ error: "Nothing to change" });
 
-    if (req.method === "PATCH") {
-      if (!isMessageOwner) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-
-      directMessage = await db.directMessage.update({
-        where: {
-          id: directMessageId as string,
-        },
-        data: {
-          content,
-        },
-        include: {
-          member: {
-            include: {
-              profile: true,
-            }
-          }
-        }
-      })
-    }
-
-    const updateKey = `chat:${conversation.id}:messages:update`;
-
-    res?.socket?.server?.io?.emit(updateKey, directMessage);
-
+    const directMessage = await db.directMessage.update({ where: { id: directMessageId }, data, include: messageInclude });
+    getIO()?.to(chatRoom(conversation.id)).emit(updateKey(conversation.id), directMessage);
     return res.status(200).json(directMessage);
   } catch (error) {
-    console.log("[MESSAGE_ID]", error);
+    console.log("[DIRECT_MESSAGE_ID]", error);
     return res.status(500).json({ error: "Internal Error" });
   }
 }

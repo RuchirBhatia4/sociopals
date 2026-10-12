@@ -1,10 +1,21 @@
 import { NextApiRequest } from "next";
-import { MemberRole } from "@prisma/client";
 
 import { NextApiResponseServerIo } from "@/types";
 import { currentProfilePages } from "@/lib/current-profile-pages";
 import { db } from "@/lib/db";
+import { chatAccess } from "@/lib/access";
+import { can } from "@/lib/permissions";
+import { getIO } from "@/lib/io";
+import { channelMessageInclude } from "@/lib/message-include";
+import { chatRoom, threadKey, updateKey } from "@/lib/socket-keys";
 
+/**
+ * One channel message, ?serverId=&channelId=:
+ *   PATCH { content }           edit your own message
+ *   PATCH { pinned: boolean }   pin / unpin (anyone in the channel)
+ *   PATCH { decision: boolean } mark / unmark as a decision (anyone in the channel)
+ *   DELETE                      yours, or anyone's with Manage messages
+ */
 export default async function handler(
   req: NextApiRequest,
   res: NextApiResponseServerIo,
@@ -15,128 +26,60 @@ export default async function handler(
 
   try {
     const profile = await currentProfilePages(req);
-    const { messageId, serverId, channelId } = req.query;
-    const { content } = req.body;
+    const { messageId, serverId, channelId } = req.query as Record<string, string>;
 
-    if (!profile) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
+    if (!profile) return res.status(401).json({ error: "Unauthorized" });
+    if (!serverId || !channelId) return res.status(400).json({ error: "Server and channel are required" });
 
-    if (!serverId) {
-      return res.status(400).json({ error: "Server ID missing" });
-    }
-
-    if (!channelId) {
-      return res.status(400).json({ error: "Channel ID missing" });
-    }
-
-    const server = await db.server.findFirst({
-      where: {
-        id: serverId as string,
-        members: {
-          some: {
-            profileId: profile.id,
-          }
-        }
-      },
-      include: {
-        members: true,
-      }
-    })
-
-    if (!server) {
-      return res.status(404).json({ error: "Server not found" });
-    }
-
-    const channel = await db.channel.findFirst({
-      where: {
-        id: channelId as string,
-        serverId: serverId as string,
-      },
-    });
-  
-    if (!channel) {
+    const access = await chatAccess(profile.id, channelId);
+    if (!access || access.kind !== "channel" || access.serverId !== serverId) {
       return res.status(404).json({ error: "Channel not found" });
     }
+    const member = await db.member.findUnique({
+      where: { id: access.member.id },
+      include: { customRoles: { include: { role: true } } },
+    });
+    if (!member) return res.status(404).json({ error: "Member not found" });
 
-    const member = server.members.find((member) => member.profileId === profile.id);
+    const existing = await db.message.findFirst({ where: { id: messageId, channelId } });
+    if (!existing || existing.deleted) return res.status(404).json({ error: "Message not found" });
 
-    if (!member) {
-      return res.status(404).json({ error: "Member not found" });
-    }
+    const isOwner = existing.memberId === member.id && !existing.webhookId;
+    const moderator = can(member, "MANAGE_MESSAGES");
+    const body = req.body ?? {};
 
-    let message = await db.message.findFirst({
-      where: {
-        id: messageId as string,
-        channelId: channelId as string,
-      },
-      include: {
-        member: {
-          include: {
-            profile: true,
-          }
-        }
-      }
-    })
-
-    if (!message || message.deleted) {
-      return res.status(404).json({ error: "Message not found" });
-    }
-
-    const isMessageOwner = message.memberId === member.id;
-    const isAdmin = member.role === MemberRole.ADMIN;
-    const isModerator = member.role === MemberRole.MODERATOR;
-    const canModify = isMessageOwner || isAdmin || isModerator;
-
-    if (!canModify) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
+    let data: Record<string, unknown> | null = null;
     if (req.method === "DELETE") {
-      message = await db.message.update({
-        where: {
-          id: messageId as string,
-        },
-        data: {
-          fileUrl: null,
-          content: "This message has been deleted.",
-          deleted: true,
-        },
-        include: {
-          member: {
-            include: {
-              profile: true,
-            }
-          }
-        }
-      })
+      if (!isOwner && !moderator) return res.status(403).json({ error: "You can't delete this message" });
+      data = { fileUrl: null, content: "This message has been deleted.", deleted: true, pinnedAt: null, isDecision: false, linkPreview: null };
+      await db.attachment.deleteMany({ where: { messageId } });
+    } else if (typeof body.content === "string") {
+      if (!isOwner) return res.status(403).json({ error: "You can only edit your own messages" });
+      if (!body.content.trim()) return res.status(400).json({ error: "Message is empty" });
+      data = { content: body.content.slice(0, 4000), editedAt: new Date() };
+    } else if (typeof body.pinned === "boolean") {
+      data = body.pinned ? { pinnedAt: new Date(), pinnedById: member.id } : { pinnedAt: null, pinnedById: null };
+    } else if (typeof body.decision === "boolean") {
+      data = { isDecision: body.decision };
     }
+    if (!data) return res.status(400).json({ error: "Nothing to change" });
 
-    if (req.method === "PATCH") {
-      if (!isMessageOwner) {
-        return res.status(401).json({ error: "Unauthorized" });
+    const message = await db.message.update({ where: { id: messageId }, data, include: channelMessageInclude });
+
+    const io = getIO();
+    if (message.threadId) {
+      io?.to(chatRoom(channelId)).emit(threadKey(message.threadId), message);
+      if (req.method === "DELETE") {
+        const root = await db.message.update({
+          where: { id: message.threadId },
+          data: { threadCount: { decrement: 1 } },
+          include: channelMessageInclude,
+        });
+        io?.to(chatRoom(channelId)).emit(updateKey(channelId), root);
       }
-
-      message = await db.message.update({
-        where: {
-          id: messageId as string,
-        },
-        data: {
-          content,
-        },
-        include: {
-          member: {
-            include: {
-              profile: true,
-            }
-          }
-        }
-      })
+    } else {
+      io?.to(chatRoom(channelId)).emit(updateKey(channelId), message);
     }
-
-    const updateKey = `chat:${channelId}:messages:update`;
-
-    res?.socket?.server?.io?.emit(updateKey, message);
 
     return res.status(200).json(message);
   } catch (error) {

@@ -3,37 +3,65 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
-  url = env("DATABASE_URL")
+  provider     = "mysql"
+  url          = env("DATABASE_URL")
   relationMode = "prisma"
 }
 
 model Profile {
-  id String @id @default(uuid())
-  userId String @unique
-  name String
+  id       String @id @default(uuid())
+  userId   String @unique
+  name     String
   imageUrl String @db.Text
-  email String @db.Text
+  email    String @db.Text
 
-  servers Server[]
-  members Member[]
-  channels Channel[]
+  statusText      String?
+  statusEmoji     String?
+  statusExpiresAt DateTime?
+  lastSeenAt      DateTime?
+  focusUntil      DateTime?
+  focusAllow      Json?
+  quietStart      Int?
+  quietEnd        Int?
+  timeZone        String?
+  keywords        Json?
+  desktopNotify   Boolean   @default(true)
+
+  servers       Server[]
+  members       Member[]
+  channels      Channel[]
+  reactions     Reaction[]
+  readStates    ReadState[]
+  notifications Notification[]
+  savedItems    SavedItem[]
+  scheduled     ScheduledMessage[]
+  chatPrefs     ChatPreference[]
+  pollVotes     PollVote[]
+  github        GithubAccount?
+  aiKeys        AiKey[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Server {
-  id String @id @default(uuid())
-  name String
-  imageUrl String @db.Text
+  id         String @id @default(uuid())
+  name       String
+  imageUrl   String @db.Text
   inviteCode String @unique
 
-  profileId String
-  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  automodLinks Boolean @default(false)
+  automodSpam  Boolean @default(true)
+  automodWords Json?
 
-  members Member[]
-  channels Channel[]
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  members    Member[]
+  channels   Channel[]
+  roles      Role[]
+  categories Category[]
+  webhooks   Webhook[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -48,20 +76,24 @@ enum MemberRole {
 }
 
 model Member {
-  id String @id @default(uuid())
+  id   String     @id @default(uuid())
   role MemberRole @default(GUEST)
 
   profileId String
-  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   serverId String
-  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  server   Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
-  messages Message[]
+  messages       Message[]
   directMessages DirectMessage[]
 
   conversationsInitiated Conversation[] @relation("MemberOne")
-  conversationsReceived Conversation[] @relation("MemberTwo")
+  conversationsReceived  Conversation[] @relation("MemberTwo")
+
+  timeoutUntil       DateTime?
+  customRoles        MemberCustomRole[]
+  channelMemberships ChannelMember[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -77,78 +109,505 @@ enum ChannelType {
 }
 
 model Channel {
-  id String @id @default(uuid())
+  id   String      @id @default(uuid())
   name String
   type ChannelType @default(TEXT)
 
   profileId String
-  profile Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
 
   serverId String
-  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  server   Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
   messages Message[]
+
+  topic           String?            @db.Text
+  categoryId      String?
+  category        Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  position        Int                @default(0)
+  isPrivate       Boolean            @default(false)
+  isGroupDm       Boolean            @default(false)
+  readOnly        Boolean            @default(false)
+  slowModeSeconds Int                @default(0)
+  channelMembers  ChannelMember[]
+  webhooks        Webhook[]
+  callSessions    CallSession[]
+  scheduled       ScheduledMessage[]
+
+  // Project mode: a GitHub repo, tasks, branches and AI help
+  isProject         Boolean        @default(false)
+  repoOwner         String?
+  repoName          String?
+  repoDefaultBranch String?
+  repoWebhookId     String?
+  repoWebhookSecret String?        @db.Text
+  tasks             Task[]
+  projectSetups     ProjectSetup[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([profileId])
   @@index([serverId])
+  @@index([categoryId])
 }
 
 model Message {
-  id String @id @default(uuid())
+  id      String @id @default(uuid())
   content String @db.Text
 
   fileUrl String? @db.Text
 
   memberId String
-  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   channelId String
-  channel Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  channel   Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
 
   deleted Boolean @default(false)
+
+  replyToId String?
+  replyTo   Message?   @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies   Message[]  @relation("MessageReplies")
+  reactions Reaction[]
+
+  editedAt      DateTime?
+  pinnedAt      DateTime?
+  pinnedById    String?
+  isDecision    Boolean      @default(false)
+  threadId      String?
+  threadCount   Int          @default(0)
+  threadLastAt  DateTime?
+  system        Boolean      @default(false)
+  webhookId     String?
+  webhookName   String?
+  webhookAvatar String?      @db.Text
+  linkPreview   Json?
+  attachments   Attachment[]
+  poll          Poll?
+  savedBy       SavedItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([channelId])
   @@index([memberId])
+  @@index([replyToId])
+  @@index([threadId])
+  @@index([channelId, pinnedAt])
 }
 
 model Conversation {
   id String @id @default(uuid())
 
   memberOneId String
-  memberOne Member @relation("MemberOne", fields: [memberOneId], references: [id], onDelete: Cascade)
+  memberOne   Member @relation("MemberOne", fields: [memberOneId], references: [id], onDelete: Cascade)
 
   memberTwoId String
-  memberTwo Member @relation("MemberTwo", fields: [memberTwoId], references: [id], onDelete: Cascade)
+  memberTwo   Member @relation("MemberTwo", fields: [memberTwoId], references: [id], onDelete: Cascade)
 
   directMessages DirectMessage[]
 
-  @@index([memberTwoId])
-
   @@unique([memberOneId, memberTwoId])
+  @@index([memberTwoId])
 }
 
 model DirectMessage {
-  id String @id @default(uuid())
-  content String @db.Text
+  id      String  @id @default(uuid())
+  content String  @db.Text
   fileUrl String? @db.Text
 
   memberId String
-  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   conversationId String
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
   deleted Boolean @default(false)
+
+  replyToId String?
+  replyTo   DirectMessage?  @relation("DirectMessageReplies", fields: [replyToId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies   DirectMessage[] @relation("DirectMessageReplies")
+  reactions Reaction[]
+
+  editedAt    DateTime?
+  pinnedAt    DateTime?
+  linkPreview Json?
+  attachments Attachment[]
+  savedBy     SavedItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([memberId])
   @@index([conversationId])
+  @@index([replyToId])
+}
+
+// One emoji from one person on one message (channel message or direct message).
+model Reaction {
+  id    String @id @default(uuid())
+  emoji String
+
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  messageId String?
+  message   Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  directMessageId String?
+  directMessage   DirectMessage? @relation(fields: [directMessageId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([profileId, messageId, emoji])
+  @@unique([profileId, directMessageId, emoji])
+  @@index([messageId])
+  @@index([directMessageId])
+}
+
+// When a person last read a chat (a channel id or a conversation id). Drives unread
+// markers, mention badges and the "new messages" line.
+model ReadState {
+  id     String @id @default(uuid())
+  chatId String
+
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  lastReadAt DateTime @default(now())
+
+  @@unique([profileId, chatId])
+  @@index([chatId])
+}
+
+// ---------------------------------------------------------------------------
+// Server structure
+
+model Category {
+  id        String    @id @default(uuid())
+  name      String
+  position  Int       @default(0)
+  serverId  String
+  server    Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  channels  Channel[]
+  createdAt DateTime  @default(now())
+
+  @@index([serverId])
+}
+
+// Who can see a private channel or group DM.
+model ChannelMember {
+  id        String  @id @default(uuid())
+  channelId String
+  channel   Channel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  memberId  String
+  member    Member  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, memberId])
+  @@index([memberId])
+}
+
+// Custom roles on top of the built-in Admin / Moderator / Guest.
+model Role {
+  id          String             @id @default(uuid())
+  name        String
+  color       String             @default("#99aab5")
+  position    Int                @default(0)
+  permissions Int                @default(0) // bitmask, see lib/permissions.ts
+  serverId    String
+  server      Server             @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  members     MemberCustomRole[]
+  createdAt   DateTime           @default(now())
+
+  @@index([serverId])
+}
+
+model MemberCustomRole {
+  id       String @id @default(uuid())
+  memberId String
+  member   Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  roleId   String
+  role     Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, roleId])
+  @@index([roleId])
+}
+
+// Incoming webhooks: POST /api/hooks/<id>/<token> posts into a channel.
+model Webhook {
+  id          String   @id @default(uuid())
+  name        String
+  avatarUrl   String?  @db.Text
+  token       String   @unique
+  channelId   String
+  channel     Channel  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  serverId    String
+  server      Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  createdById String
+  createdAt   DateTime @default(now())
+
+  @@index([channelId])
+  @@index([serverId])
+}
+
+// ---------------------------------------------------------------------------
+// Messages: files, polls, scheduling, saving
+
+model Attachment {
+  id              String         @id @default(uuid())
+  url             String         @db.Text
+  name            String
+  type            String
+  size            Int            @default(0)
+  messageId       String?
+  message         Message?       @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  directMessageId String?
+  directMessage   DirectMessage? @relation(fields: [directMessageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([directMessageId])
+}
+
+model Poll {
+  id        String     @id @default(uuid())
+  question  String     @db.Text
+  options   Json // string[]
+  multi     Boolean    @default(false)
+  closesAt  DateTime?
+  closedAt  DateTime?
+  messageId String     @unique
+  message   Message    @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  votes     PollVote[]
+
+  @@index([closesAt])
+}
+
+model PollVote {
+  id        String  @id @default(uuid())
+  option    Int
+  pollId    String
+  poll      Poll    @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  profileId String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, profileId, option])
+  @@index([profileId])
+}
+
+// "Send later", delivered by the background ticker (lib/ticker.ts).
+model ScheduledMessage {
+  id             String    @id @default(uuid())
+  content        String    @db.Text
+  sendAt         DateTime
+  sentAt         DateTime?
+  error          String?
+  profileId      String
+  profile        Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  memberId       String
+  channelId      String?
+  channel        Channel?  @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  conversationId String?
+  replyToId      String?
+  createdAt      DateTime  @default(now())
+
+  @@index([sendAt, sentAt])
+  @@index([profileId])
+  @@index([channelId])
+}
+
+// "Save for later", optionally with a reminder.
+model SavedItem {
+  id              String         @id @default(uuid())
+  profileId       String
+  profile         Profile        @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  chatId          String
+  serverId        String?
+  messageId       String?
+  message         Message?       @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  directMessageId String?
+  directMessage   DirectMessage? @relation(fields: [directMessageId], references: [id], onDelete: Cascade)
+  remindAt        DateTime?
+  remindedAt      DateTime?
+  doneAt          DateTime?
+  createdAt       DateTime       @default(now())
+
+  @@index([profileId])
+  @@index([remindAt, remindedAt])
+  @@index([messageId])
+  @@index([directMessageId])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications (the inbox), per-chat alert levels, calls
+
+enum NotificationType {
+  MENTION
+  REPLY
+  DIRECT
+  KEYWORD
+  THREAD
+  REMINDER
+  POLL
+  TASK
+}
+
+model Notification {
+  id              String           @id @default(uuid())
+  type            NotificationType
+  profileId       String
+  profile         Profile          @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  serverId        String?
+  chatId          String
+  chatName        String?
+  messageId       String?
+  directMessageId String?
+  actorName       String?
+  actorImage      String?          @db.Text
+  preview         String           @db.Text
+  createdAt       DateTime         @default(now())
+  readAt          DateTime?
+  doneAt          DateTime?
+
+  @@index([profileId, doneAt, createdAt])
+  @@index([messageId])
+}
+
+enum NotifyLevel {
+  ALL
+  MENTIONS
+  NONE
+}
+
+// Per person, per chat (channel or conversation): how loud it may be.
+model ChatPreference {
+  id        String      @id @default(uuid())
+  profileId String
+  profile   Profile     @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  chatId    String
+  level     NotifyLevel @default(ALL)
+  muted     Boolean     @default(false)
+
+  @@unique([profileId, chatId])
+}
+
+// Voice/video sessions, for the recap posted when a call ends.
+model CallSession {
+  id             String    @id @default(uuid())
+  channelId      String
+  channel        Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  startedAt      DateTime  @default(now())
+  endedAt        DateTime?
+  participants   Json // [{ profileId, name, joinedAt, leftAt }]
+  active         Json // profile ids currently in the call
+  recapMessageId String?
+
+  @@index([channelId, endedAt])
+}
+
+// ---------------------------------------------------------------------------
+// Project mode
+
+// One GitHub login per person (Sign in with GitHub). The token is encrypted (lib/crypto.ts).
+model GithubAccount {
+  id        String   @id @default(uuid())
+  profileId String   @unique
+  profile   Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  githubId  String
+  login     String
+  avatarUrl String?  @db.Text
+  tokenEnc  String   @db.Text
+  scopes    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum AiProvider {
+  ANTHROPIC
+  OPENAI
+}
+
+// Someone's own AI key. Encrypted; only its owner can see the last digits, edit it or use it.
+model AiKey {
+  id        String     @id @default(uuid())
+  profileId String
+  profile   Profile    @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  provider  AiProvider
+  label     String
+  model     String
+  keyEnc    String     @db.Text
+  last4     String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@unique([profileId, provider])
+}
+
+// The joining steps for a project channel (GitHub, AI), per member.
+model ProjectSetup {
+  id          String    @id @default(uuid())
+  channelId   String
+  channel     Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  memberId    String
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([channelId, memberId])
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+}
+
+model Task {
+  id          String          @id @default(uuid())
+  number      Int
+  channelId   String
+  channel     Channel         @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  title       String
+  description String?         @db.Text
+  status      TaskStatus      @default(TODO)
+  createdById String
+  assigneeId  String?
+  branch      String?
+  prNumber    Int?
+  prUrl       String?         @db.Text
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  aiMessages  TaskAiMessage[]
+
+  @@unique([channelId, number])
+  @@index([assigneeId, status])
+}
+
+// The AI chat beside a task, per person. A message may carry proposed code changes.
+model TaskAiMessage {
+  id        String    @id @default(uuid())
+  taskId    String
+  task      Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  profileId String
+  role      String // "user" | "assistant"
+  content   String    @db.Text
+  aiLabel   String?
+  proposal  Json? // { summary, files: [{ path, action, content, original }] }
+  appliedAt DateTime?
+  commitSha String?
+  createdAt DateTime  @default(now())
+
+  @@index([taskId, profileId, createdAt])
+}
+
+// One row per server-side code run, for per-person rate limits.
+model CodeRun {
+  id        String   @id @default(uuid())
+  profileId String
+  language  String
+  ms        Int      @default(0)
+  ok        Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@index([profileId, createdAt])
 }
