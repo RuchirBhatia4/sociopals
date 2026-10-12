@@ -44,12 +44,12 @@ are meant for testing.
 ## 4. Put the code on the server
 Push your latest code from your Mac first:
 ```bash
-git push origin phase-1
+git push origin main
 ```
 Then on the server:
 ```bash
 ssh root@<DROPLET-IP>
-git clone -b phase-1 https://github.com/RuchirBhatia4/sociopals.git /opt/sociopals
+git clone https://github.com/RuchirBhatia4/sociopals.git /opt/sociopals
 cd /opt/sociopals && sudo bash deploy/app/setup.sh
 ```
 `setup.sh` installs Docker, adds swap memory for building, opens only ports 22/80/443, and
