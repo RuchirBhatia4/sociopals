@@ -9,6 +9,7 @@ import { NavigationAction } from "./navigation-action";
 import { NavigationItem } from "./navigation-item";
 import { NavigationShortcuts } from "./navigation-shortcuts";
 import { MeMenu } from "./me-menu";
+import { LogoMark } from "@/components/brand/logo";
 
 export const NavigationSidebar = async () => {
   const profile = await currentProfile();
@@ -31,6 +32,7 @@ export const NavigationSidebar = async () => {
     <div
       className="space-y-3 flex flex-col items-center h-full text-primary w-full bg-rail py-3"
     >
+      <LogoMark className="h-7 w-auto shrink-0" />
       <NavigationShortcuts />
       <Separator
         className="h-px bg-border w-8 mx-auto"

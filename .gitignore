@@ -10,3 +10,6 @@ dist
 .devdb/
 *.tsbuildinfo
 .pgdata/
+
+# original logo exports (large; app uses app/icon.svg, components/brand, public/og.png)
+/brand/

@@ -13,9 +13,14 @@ import { PREFS_BOOT_SCRIPT } from '@/lib/preferences-boot'
 
 const font = Inter({ subsets: ['latin'], variable: '--font-sans' })
 
+const description = 'Team chat, projects, and AI, all in one place.'
+
 export const metadata: Metadata = {
-  title: 'SocioPals',
-  description: 'Calm, fast team chat: channels, DMs, voice and video, without the noise.',
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'),
+  title: 'Sociopals',
+  description,
+  openGraph: { title: 'Sociopals', description, siteName: 'Sociopals', images: ['/og.png'] },
+  twitter: { card: 'summary_large_image', title: 'Sociopals', description, images: ['/og.png'] },
 }
 
 export default function RootLayout({
