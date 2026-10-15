@@ -1,4 +1,4 @@
-# Everything Sociopals needs on one server: the app, MySQL, and Caddy for HTTPS.
+# Everything Sociopals needs on one server: the app, Postgres, and Caddy for HTTPS.
 # Settings live in deploy/app/.env (copy env.example).
 # Run from the repo root:  docker compose -f deploy/app/docker-compose.yml up -d --build
 services:
@@ -11,24 +11,18 @@ services:
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
     env_file: .env
     environment:
-      DATABASE_URL: mysql://sociopals:${MYSQL_PASSWORD}@db:3306/sociopals
+      DATABASE_URL: postgresql://sociopals:${POSTGRES_PASSWORD}@db:5432/sociopals
     depends_on:
       db:
-        condition: service_healthy
-    restart: unless-stopped
-
-  db:
-    image: mysql:8.0
-    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    image: postgres:16-alpine
     environment:
-      MYSQL_DATABASE: sociopals
-      MYSQL_USER: sociopals
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      POSTGRES_DB: sociopals
+      POSTGRES_USER: sociopals
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - db-data:/var/lib/mysql
+      - db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      test: ["CMD-SHELL", "pg_isready -U sociopals -d sociopals"]
       interval: 5s
       timeout: 5s
       retries: 30

@@ -33,7 +33,7 @@ export async function GET(req: Request) {
     where: {
       serverId,
       OR: [{ isPrivate: false, isGroupDm: false }, { channelMembers: { some: { memberId: me.id } } }],
-      ...(s.in ? { name: { contains: s.in } } : {}),
+      ...(s.in ? { name: { contains: s.in, mode: "insensitive" as const } } : {}),
     },
     select: { id: true, name: true, isGroupDm: true },
   });
@@ -41,12 +41,12 @@ export async function GET(req: Request) {
 
   const authors = s.from
     ? await db.member.findMany({
-        where: { serverId, profile: { name: { contains: s.from } } },
+        where: { serverId, profile: { name: { contains: s.from, mode: "insensitive" as const } } },
         select: { id: true },
       })
     : null;
 
-  const textFilters: Prisma.MessageWhereInput[] = s.terms.map((t) => ({ content: { contains: t } }));
+  const textFilters: Prisma.MessageWhereInput[] = s.terms.map((t) => ({ content: { contains: t, mode: "insensitive" as const } }));
   const common = {
     deleted: false,
     ...(authors ? { memberId: { in: authors.map((a) => a.id) } } : {}),
@@ -55,7 +55,7 @@ export async function GET(req: Request) {
   const hasFilters: Prisma.MessageWhereInput[] = [];
   if (s.has.has("file")) hasFilters.push({ OR: [{ fileUrl: { not: null } }, { attachments: { some: {} } }] });
   if (s.has.has("image")) hasFilters.push({ attachments: { some: { type: { startsWith: "image/" } } } });
-  if (s.has.has("link")) hasFilters.push({ content: { contains: "http" } });
+  if (s.has.has("link")) hasFilters.push({ content: { contains: "http", mode: "insensitive" as const } });
 
   const channelResults = channels.length
     ? await db.message.findMany({
@@ -81,9 +81,9 @@ export async function GET(req: Request) {
             ...common,
             conversation: { OR: [{ memberOneId: me.id }, { memberTwoId: me.id }] },
             AND: [
-              ...s.terms.map((t) => ({ content: { contains: t } })),
+              ...s.terms.map((t) => ({ content: { contains: t, mode: "insensitive" as const } })),
               ...(s.has.has("file") ? [{ OR: [{ fileUrl: { not: null } }, { attachments: { some: {} } }] }] : []),
-              ...(s.has.has("link") ? [{ content: { contains: "http" } }] : []),
+              ...(s.has.has("link") ? [{ content: { contains: "http", mode: "insensitive" as const } }] : []),
             ],
           },
           include: { ...messageInclude, conversation: { include: { memberOne: { include: { profile: true } }, memberTwo: { include: { profile: true } } } } },

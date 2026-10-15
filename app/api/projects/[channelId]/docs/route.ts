@@ -19,7 +19,7 @@ export async function GET(req: Request, { params }: { params: { channelId: strin
   }
   const q = (new URL(req.url).searchParams.get("q") || "").trim();
   const docs = await db.projectDoc.findMany({
-    where: { channelId: p.channel.id, ...(q ? { OR: [{ title: { contains: q } }, { content: { contains: q } }] } : {}) },
+    where: { channelId: p.channel.id, ...(q ? { OR: [{ title: { contains: q, mode: "insensitive" as const } }, { content: { contains: q, mode: "insensitive" as const } }] } : {}) },
     select: { id: true, title: true, isOverview: true, updatedAt: true, updatedById: true, content: true },
     orderBy: [{ isOverview: "desc" }, { updatedAt: "desc" }],
   });

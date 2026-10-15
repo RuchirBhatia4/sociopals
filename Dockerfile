@@ -26,5 +26,5 @@ RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
 COPY --from=build /app ./
 EXPOSE 3000
-# Bring the database tables up to date, then start
-CMD ["sh", "-c", "npx prisma db push --skip-generate && npx next start -p 3000"]
+# Apply any new database migrations, then start
+CMD ["sh", "-c", "npx prisma migrate deploy && npx next start -p 3000"]

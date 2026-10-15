@@ -9,3 +9,4 @@ dist
 .mysql-data/
 .devdb/
 *.tsbuildinfo
+.pgdata/

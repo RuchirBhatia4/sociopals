@@ -23,7 +23,7 @@ export async function GET(req: Request, { params }: { params: { channelId: strin
 
   if (q || sp.get("all")) {
     const files = await db.projectFile.findMany({
-      where: { channelId: p.channel.id, ...(q ? { name: { contains: q } } : {}) },
+      where: { channelId: p.channel.id, ...(q ? { name: { contains: q, mode: "insensitive" as const } } : {}) },
       include: latest,
       orderBy: { updatedAt: "desc" },
       take: 300,

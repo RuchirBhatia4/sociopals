@@ -3,9 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider     = "mysql"
-  url          = env("DATABASE_URL")
-  relationMode = "prisma"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model Profile {
@@ -674,7 +673,7 @@ model ProjectDoc {
   channelId   String
   channel     Channel              @relation(fields: [channelId], references: [id], onDelete: Cascade)
   title       String
-  content     String               @db.LongText
+  content     String               @db.Text
   isOverview  Boolean              @default(false)
   version     Int                  @default(1)
   createdById String
@@ -693,7 +692,7 @@ model ProjectDocRevision {
   docId      String
   doc        ProjectDoc @relation(fields: [docId], references: [id], onDelete: Cascade)
   title      String
-  content    String     @db.LongText
+  content    String     @db.Text
   editedById String
   createdAt  DateTime   @default(now())
 
