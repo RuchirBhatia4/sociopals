@@ -114,6 +114,7 @@ const ChannelIdPage = async ({
               blockedReason={blockedReason}
               slowModeSeconds={can(member, "MANAGE_MESSAGES") ? 0 : channel.slowModeSeconds}
               pageDrop
+              projectAi={channel.isProject}
             />
           </ProjectWrap>
         )}

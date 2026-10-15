@@ -45,12 +45,14 @@ export default async function handler(
     if (!existing || existing.deleted) return res.status(404).json({ error: "Message not found" });
 
     const isOwner = existing.memberId === member.id && !existing.webhookId;
+    // the person who asked can remove their AI's answer (but not edit it)
+    const ownsAiAnswer = existing.memberId === member.id && (existing.aiMeta as any)?.kind === "answer";
     const moderator = can(member, "MANAGE_MESSAGES");
     const body = req.body ?? {};
 
     let data: Record<string, unknown> | null = null;
     if (req.method === "DELETE") {
-      if (!isOwner && !moderator) return res.status(403).json({ error: "You can't delete this message" });
+      if (!isOwner && !ownsAiAnswer && !moderator) return res.status(403).json({ error: "You can't delete this message" });
       data = { fileUrl: null, content: "This message has been deleted.", deleted: true, pinnedAt: null, isDecision: false, linkPreview: null };
       await db.attachment.deleteMany({ where: { messageId } });
     } else if (typeof body.content === "string") {

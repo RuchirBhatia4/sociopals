@@ -32,6 +32,7 @@ export const useProject = (channelId: string) =>
     queryKey: ["project", channelId],
     queryFn: () => fetch(`/api/projects/${channelId}`).then((r) => (r.ok ? r.json() : Promise.reject(r))),
     staleTime: 30_000,
+    enabled: !!channelId,
   });
 
 /** All tasks in a project, kept live over the socket. */

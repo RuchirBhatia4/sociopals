@@ -25,6 +25,7 @@ import { quickTimes } from "@/lib/when";
 import type { MessagePayload } from "@/lib/message-include";
 import { useModal } from "@/hooks/use-modal-store";
 import { useComposerStore } from "@/hooks/use-composer-store";
+import { useAiStream } from "@/hooks/use-ai-stream";
 import { usePanel } from "@/hooks/use-panel-store";
 import { toast } from "@/hooks/use-toast";
 
@@ -98,8 +99,14 @@ const ChatItemInner = ({
   const isAdmin = currentMember.role === MemberRole.ADMIN;
   const isModerator = currentMember.role === MemberRole.MODERATOR;
   const isBot = !!message.webhookName;
+  // AI in project channels: a question ("prompt") or the answer that streams in after it
+  const ai = message.aiMeta ?? null;
+  const isAiAnswer = ai?.kind === "answer";
+  const streaming = isAiAnswer && ai?.status === "streaming";
+  const liveText = useAiStream((st) => (streaming ? st.text[id] : undefined));
+  const aiTone = ai?.provider === "OPENAI" ? "from-emerald-400 to-teal-600" : "from-orange-300 to-rose-500";
   const isOwner = currentMember.id === member.id && !isBot;
-  const canDeleteMessage = !deleted && (isAdmin || isModerator || isOwner);
+  const canDeleteMessage = !deleted && (isAdmin || isModerator || isOwner || (isAiAnswer && currentMember.id === member.id));
   const canEditMessage = !deleted && isOwner && !fileUrl && !message.poll && !message.system;
   const fileType = fileUrl?.split(".").pop()?.toLowerCase();
   const isPDF = !!fileUrl && fileType === "pdf";
@@ -230,6 +237,10 @@ const ChatItemInner = ({
             >
               {format(createdAt, "h:mm")}
             </time>
+          ) : isAiAnswer ? (
+            <span className={cn("mt-0.5 h-10 w-10 rounded-xl bg-gradient-to-br text-white flex items-center justify-center shadow-sm", aiTone)} aria-hidden>
+              <Sparkles className="h-5 w-5" />
+            </span>
           ) : isBot && !avatar ? (
             <span className="mt-0.5 h-10 w-10 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center"><Bot className="h-5 w-5" /></span>
           ) : (
@@ -247,7 +258,7 @@ const ChatItemInner = ({
               {pinned && <span className="inline-flex items-center gap-1 text-amber-400"><Pin className="h-3 w-3" /> Pinned</span>}
             </div>
           )}
-          {message.replyTo && (
+          {message.replyTo && !isAiAnswer && (
             <button
               type="button"
               onClick={() => jumpTo(message.replyTo!.id)}
@@ -266,7 +277,9 @@ const ChatItemInner = ({
               <button type="button" onClick={() => openProfile(member.id)} className={cn("font-semibold text-[15px]", !isBot && "hover:underline")}>
                 {name}
               </button>
-              {isBot && <span className="self-center text-[10px] font-bold px-1.5 py-px rounded bg-indigo-500 text-white tracking-wide">BOT</span>}
+              {isAiAnswer ? (
+                <span className="self-center text-[10px] px-1.5 py-px rounded bg-violet-500/20 text-violet-300 tracking-wide">AI</span>
+              ) : isBot && <span className="self-center text-[10px] font-bold px-1.5 py-px rounded bg-indigo-500 text-white tracking-wide">BOT</span>}
               {!isBot && roleIconMap[member.role] && (
                 <ActionTooltip label={member.role === "ADMIN" ? "Admin" : "Moderator"}>
                   <span className="self-center">{roleIconMap[member.role]}</span>
@@ -275,6 +288,14 @@ const ChatItemInner = ({
               <time dateTime={createdAt.toISOString()} title={fullTime} className="text-xs text-muted-foreground tabular-nums">
                 {time}
               </time>
+              {isAiAnswer && ai?.askedBy && (
+                <span className="text-[11px] text-muted-foreground truncate">asked by {ai.askedBy.split(" ")[0]}{ai.model ? ` · ${ai.model}` : ""}</span>
+              )}
+              {ai?.kind === "prompt" && (
+                <span className="self-center inline-flex items-center gap-1 text-[11px] text-violet-300/90 bg-violet-500/10 rounded-full px-2 py-px">
+                  <Sparkles className="h-3 w-3" /> to {ai.label}
+                </span>
+              )}
             </div>
           )}
 
@@ -305,10 +326,28 @@ const ChatItemInner = ({
             </a>
           )}
 
-          {hasText && (
+          {streaming && (
+            <div className="text-[15px] leading-relaxed text-foreground/90 break-words" aria-live="polite">
+              {liveText ? (
+                <>{renderMessage(liveText, { meId: currentMember.id })}<span className="inline-block w-2 h-4 -mb-0.5 ml-0.5 bg-violet-400/80 animate-pulse rounded-sm" aria-hidden /></>
+              ) : (
+                <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="flex gap-1" aria-hidden>
+                    <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce [animation-delay:-0.3s]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce [animation-delay:-0.15s]" />
+                    <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce" />
+                  </span>
+                  Reading the conversation…
+                </span>
+              )}
+            </div>
+          )}
+
+          {hasText && !streaming && (
             <div className={cn(
               "text-[15px] leading-relaxed text-foreground/90 break-words",
               deleted && "italic text-muted-foreground text-sm",
+              isAiAnswer && ai?.status === "error" && "text-amber-300 text-sm",
               !deleted && isEmojiOnly(content) && "text-4xl leading-tight"
             )}>
               {deleted ? content : renderMessage(content, { meId: currentMember.id, onMention: openProfile })}

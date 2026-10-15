@@ -4,12 +4,13 @@ import axios from "axios";
 import qs from "query-string";
 import { format } from "date-fns";
 import {
-  BarChart3, CalendarClock, ChevronDown, Clock, Code2, FileText, Film, Loader2, Lock, Music, Paperclip, SendHorizontal, Timer, Trash2, Upload, X,
+  BarChart3, CalendarClock, ChevronDown, Clock, Code2, Sparkles, FileText, Film, Loader2, Lock, Music, Paperclip, SendHorizontal, Timer, Trash2, Upload, X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useComposerStore } from "@/hooks/use-composer-store";
+import { useModal } from "@/hooks/use-modal-store";
 import { useSocket } from "@/components/providers/socket-provider";
 import { EmojiPicker } from "@/components/emoji-picker";
 import { UserAvatar } from "@/components/user-avatar";
@@ -26,6 +27,7 @@ import { toast } from "@/hooks/use-toast";
 
 import { kindOf, fileSize } from "./message-attachments";
 import { PollComposer, type NewPoll } from "./poll-composer";
+import { ComposerModeBar, useAiComposer, type ComposerMode } from "./ai-mode";
 import { useProjectView } from "@/components/project/project-views";
 import { CodeEditor, type CodeEditorHandle } from "./code-editor";
 import { highlight, normalizeLang } from "@/lib/highlight";
@@ -48,6 +50,8 @@ interface ChatInputProps {
   slowModeSeconds?: number;
   /** the main composer of a page also accepts files dropped anywhere on the page */
   pageDrop?: boolean;
+  /** project channels: Chat · Code · AI modes in the message box */
+  projectAi?: boolean;
 }
 
 type Pending = { key: string; file: File; preview: string | null; status: "uploading" | "done" | "error"; url?: string };
@@ -58,7 +62,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const draftKey = (chatId: string, threadId?: string) => `draft:${threadId ? `thread:${threadId}` : chatId}`;
 
 export const ChatInput = ({
-  apiUrl, query, name, type, chatId, me, members = [], threadId, blockedReason = null, slowModeSeconds = 0, pageDrop = false,
+  apiUrl, query, name, type, chatId, me, members = [], threadId, blockedReason = null, slowModeSeconds = 0, pageDrop = false, projectAi = false,
 }: ChatInputProps) => {
   const { socket } = useSocket();
   const qc = useQueryClient();
@@ -83,6 +87,12 @@ export const ChatInput = ({
   const [code, setCode] = useState<string | null>(null);
   const [codeLang, setCodeLang] = useState("auto");
   const editor = useRef<CodeEditorHandle>(null);
+  // Project channels: ask your own AI right from the message box.
+  const aiOn = projectAi && type === "channel" && !threadId;
+  const [aiMode, setAiMode] = useState(false);
+  const composer = useAiComposer(aiOn ? chatId : undefined);
+  const { onOpen } = useModal();
+  const mode: ComposerMode = aiMode ? "ai" : code !== null ? "code" : "chat";
   const fileInput = useRef<HTMLInputElement>(null);
   // "@Name" shown in the box -> member id, turned into tokens on send
   const picked = useRef(new Map<string, string>());
@@ -312,7 +322,31 @@ export const ChatInput = ({
     setError(msg);
   };
 
+  const askAi = async () => {
+    const prompt = composed();
+    if (!prompt.trim() || sending) return;
+    if (!composer.ai) { onOpen("settings", { tab: "ai" }); return; }
+    try {
+      setSending(true);
+      setError(null);
+      await axios.post("/api/socket/ai-chat", {
+        channelId: chatId,
+        prompt,
+        aiKeyId: composer.ai.id,
+        context: composer.ctx.size,
+        include: { overview: composer.ctx.overview, tasks: composer.ctx.tasks, repo: composer.ctx.repo },
+      });
+      reset();
+    } catch (e) {
+      fail(e);
+    } finally {
+      setSending(false);
+      requestAnimationFrame(() => ref.current?.focus());
+    }
+  };
+
   const send = async () => {
+    if (aiMode) return askAi();
     if (!canSend) return;
     const content = composed();
     try {
@@ -372,6 +406,7 @@ export const ChatInput = ({
       if (e.key === "Escape") { e.preventDefault(); setMention(null); return; }
     }
     if (e.key === "Escape" && replyTo) { e.preventDefault(); setReplyTo(replyKey, null); return; }
+    if (e.key === "Escape" && aiMode && !value) { e.preventDefault(); setAiMode(false); return; }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       send();
@@ -393,7 +428,9 @@ export const ChatInput = ({
   };
 
   const basePlaceholder = threadId ? "Reply in thread…" : `Message ${type === "conversation" ? name : "#" + name}`;
-  const placeholder = code !== null ? "Add a note about the code (optional)" : basePlaceholder;
+  const placeholder = aiMode
+    ? composer.ai ? `Ask ${composer.ai.label} anything; it reads the last ${composer.ctx.size} messages${code !== null ? " and your code" : ""}` : "Add your AI key to ask questions here"
+    : code !== null ? "Add a note about the code (optional)" : basePlaceholder;
 
   if (blockedReason) {
     return (
@@ -513,6 +550,19 @@ export const ChatInput = ({
           </div>
         )}
 
+        {aiOn && (
+          <ComposerModeBar
+            mode={mode}
+            composer={composer}
+            onMode={(m) => {
+              if (m === "ai") setAiMode(true);
+              else setAiMode(false);
+              if (m === "code") { if (code === null) openCode(); else editor.current?.focus(); }
+              if (m === "chat" && code !== null && !code.trim()) setCode(null);
+              if (m !== "code") requestAnimationFrame(() => ref.current?.focus());
+            }}
+          />
+        )}
         <div className="flex items-end gap-0.5 p-1.5">
           <input
             ref={fileInput}
@@ -560,6 +610,7 @@ export const ChatInput = ({
             aria-label={placeholder}
             onChange={(e) => {
               if (maybeOpenCode(e.target.value)) return;
+              if (aiOn && !aiMode && /^\/ai\s/i.test(e.target.value)) { setAiMode(true); setValue(e.target.value.replace(/^\/ai\s/i, "")); return; }
               setValue(e.target.value);
               detectMention(e.target.value, e.target.selectionStart);
               if (e.target.value.trim()) onTyped();
@@ -572,17 +623,17 @@ export const ChatInput = ({
           <div className="h-9 w-9 flex-shrink-0 flex items-center justify-center rounded-lg hover:bg-foreground/[0.06]">
             <EmojiPicker onChange={insertAtCaret} label="Insert emoji" />
           </div>
-          <div className={cn("flex flex-shrink-0 rounded-lg overflow-hidden transition", canSend ? "bg-brand text-brand-foreground" : "text-muted-foreground/50")}>
+          <div className={cn("flex flex-shrink-0 rounded-lg overflow-hidden transition", aiMode ? ((value.trim() || code?.trim()) && !sending ? "bg-violet-500 text-white" : "text-muted-foreground/50") : canSend ? "bg-brand text-brand-foreground" : "text-muted-foreground/50")}>
             <button
               type="button"
-              aria-label="Send message"
+              aria-label={aiMode ? "Ask your AI" : "Send message"}
               onClick={send}
-              disabled={!canSend}
+              disabled={aiMode ? !(value.trim() || code?.trim()) || sending : !canSend}
               className="h-9 w-9 flex items-center justify-center"
             >
-              {sending || uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : cooldown > 0 ? <span className="text-xs font-semibold tabular-nums">{cooldown}s</span> : <SendHorizontal className="h-4 w-4" />}
+              {sending || uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : aiMode ? <Sparkles className="h-4 w-4" /> : cooldown > 0 ? <span className="text-xs font-semibold tabular-nums">{cooldown}s</span> : <SendHorizontal className="h-4 w-4" />}
             </button>
-            {!threadId && (
+            {!threadId && !aiMode && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button

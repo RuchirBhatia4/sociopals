@@ -185,6 +185,8 @@ model Message {
   webhookId     String?
   webhookName   String?
   webhookAvatar String?      @db.Text
+  // AI in project channels: { kind: "prompt" | "answer", label, provider, model, askedBy, status }
+  aiMeta        Json?
   linkPreview   Json?
   attachments   Attachment[]
   poll          Poll?

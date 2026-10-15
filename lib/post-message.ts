@@ -100,6 +100,8 @@ export async function postChannelMessage(args: {
   poll?: NewPoll | null;
   webhook?: { id: string; name: string; avatarUrl?: string | null } | null;
   system?: boolean;
+  /** project-channel AI question or answer (see pages/api/socket/ai-chat.ts) */
+  aiMeta?: Prisma.InputJsonValue | null;
 }) {
   const { member, channel } = args;
   const server = channel.server;
@@ -157,6 +159,7 @@ export async function postChannelMessage(args: {
       webhookId: args.webhook?.id ?? null,
       webhookName: args.webhook?.name ?? null,
       webhookAvatar: args.webhook?.avatarUrl ?? null,
+      aiMeta: args.aiMeta ?? undefined,
       attachments: attachments.length ? { create: attachments } : undefined,
       poll: poll ? { create: { ...poll, options: poll.options as unknown as Prisma.InputJsonValue } } : undefined,
     },
@@ -193,7 +196,9 @@ export async function postChannelMessage(args: {
       .then(() => io?.to(chatRoom(channel.id)).emit(workspaceKey(channel.id), { type: "files" }))
       .catch((e) => console.log("[WORKSPACE_COLLECT]", e));
   }
-  if (!args.system) {
+  // AI answers start empty and stream in; nobody needs a ping for them.
+  const isAiAnswer = (args.aiMeta as any)?.kind === "answer";
+  if (!args.system && !isAiAnswer) {
     notifyChannelMessage({
       message: { ...message, webhookName: args.webhook?.name },
       channel,

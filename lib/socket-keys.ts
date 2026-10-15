@@ -27,6 +27,8 @@ export const taskKey = (channelId: string) => `project:${channelId}:tasks`;
 export const workspaceKey = (channelId: string) => `project:${channelId}:workspace`;
 /** Who is editing which doc right now. */
 export const docEditingKey = (channelId: string) => `project:${channelId}:doc-editing`;
+/** An AI answer streaming into a chat: { messageId, text } (the whole text so far). */
+export const aiDeltaKey = (chatId: string) => `chat:${chatId}:ai-delta`;
 /** A new inbox notification for the signed-in person. */
 export const NOTIFY_EVENT = "notify";
 /** Someone came online / went offline / changed status, in a server. */

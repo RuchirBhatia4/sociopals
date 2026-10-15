@@ -76,6 +76,16 @@ export type MessagePayload = {
   webhookName?: string | null;
   webhookAvatar?: string | null;
   poll?: PollPayload | null;
+  aiMeta?: AiMeta | null;
+};
+
+export type AiMeta = {
+  kind: "prompt" | "answer";
+  label: string;
+  provider?: "ANTHROPIC" | "OPENAI";
+  model?: string;
+  askedBy?: string;
+  status?: "streaming" | "done" | "error";
 };
 
 /** How many messages one page of history holds. */

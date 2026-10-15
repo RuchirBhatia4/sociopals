@@ -11,7 +11,8 @@ import { useSearchParams } from "next/navigation";
 import { useChatQuery } from "@/hooks/use-chat-query";
 import { useChatSocket } from "@/hooks/use-chat-socket";
 import { useSocket } from "@/components/providers/socket-provider";
-import { addKey as addEvent, typingKey, type Typing } from "@/lib/socket-keys";
+import { addKey as addEvent, aiDeltaKey, typingKey, type Typing } from "@/lib/socket-keys";
+import { useAiStream } from "@/hooks/use-ai-stream";
 import type { MessagePayload } from "@/lib/message-include";
 import { JUMP_EVENT, flashMessage } from "@/lib/jump";
 import { usePanel } from "@/hooks/use-panel-store";
@@ -216,6 +217,15 @@ export const ChatMessages = ({
     if (bottom && unseen) { setUnseen(0); markRead(); }
     if (el.scrollTop < 200 && hasNextPage && !isFetchingNextPage) fetchNextPage();
   };
+
+  /* ---------- AI answers streaming in (project channels) ---------- */
+  useEffect(() => {
+    if (!socket || type !== "channel") return;
+    const k = aiDeltaKey(chatId);
+    const on = (d: { messageId: string; text: string }) => useAiStream.getState().set(d.messageId, d.text);
+    socket.on(k, on);
+    return () => { socket.off(k, on); };
+  }, [socket, chatId, type]);
 
   /* ---------- typing ---------- */
   const [typing, setTyping] = useState<Record<string, { name: string; at: number }>>({});
