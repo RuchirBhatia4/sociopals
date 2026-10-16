@@ -124,6 +124,12 @@ async function runTool(host: ToolHost, name: string, input: any): Promise<{ resu
 
 const MAX_STEPS = 10;
 
+/** Live progress while the agent works: answer text as it's written, and what it's doing between answers. */
+export type AgentEvent = { type: "delta"; text: string } | { type: "status"; label: string };
+
+const statusFor = (name: string, input: any) =>
+  name === "read_file" ? `Reading ${String(input?.path ?? "a file")}` : name === "list_files" ? "Looking through the files" : "Writing the code changes";
+
 /** Run the agent on a conversation; returns its reply and, if it made one, a proposal. */
 export async function runAgent(args: {
   provider: AiProvider;
@@ -134,11 +140,12 @@ export async function runAgent(args: {
   host: ToolHost;
   /** images attached to the task (designs, screenshots), shown with the latest message */
   images?: string[];
+  onEvent?: (e: AgentEvent) => void;
 }): Promise<{ text: string; proposal: Proposal | null }> {
   return args.provider === "ANTHROPIC" ? runClaude(args) : runOpenAI(args);
 }
 
-async function runClaude({ key, model, system, history, host, images = [] }: Parameters<typeof runAgent>[0]) {
+async function runClaude({ key, model, system, history, host, images = [], onEvent }: Parameters<typeof runAgent>[0]) {
   const client = new Anthropic({ apiKey: key });
   const tools: Anthropic.Tool[] = TOOLS.map((t) => ({ name: t.name, description: t.description, input_schema: t.schema as any }));
   const messages: Anthropic.MessageParam[] = history.map((h, i) =>
@@ -151,7 +158,18 @@ async function runClaude({ key, model, system, history, host, images = [] }: Par
 
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
-      const message = await client.messages.stream({ model, max_tokens: 16000, system, tools, messages }).finalMessage();
+      const stream = client.messages.stream({ model, max_tokens: 16000, system, tools, messages });
+      let streamed = false;
+      stream.on("text", (delta) => {
+        if (!streamed && texts.length) onEvent?.({ type: "delta", text: "\n\n" });
+        streamed = true;
+        onEvent?.({ type: "delta", text: delta });
+      });
+      stream.on("streamEvent", (ev) => {
+        if (ev.type === "content_block_start" && ev.content_block.type === "tool_use" && ev.content_block.name === "propose_changes")
+          onEvent?.({ type: "status", label: statusFor("propose_changes", null) });
+      });
+      const message = await stream.finalMessage();
       for (const b of message.content) if (b.type === "text" && b.text.trim()) texts.push(b.text.trim());
       if (message.stop_reason === "refusal") break;
       if (message.stop_reason === "pause_turn") { messages.push({ role: "assistant", content: message.content }); continue; }
@@ -160,6 +178,7 @@ async function runClaude({ key, model, system, history, host, images = [] }: Par
       messages.push({ role: "assistant", content: message.content });
       const results: Anthropic.ToolResultBlockParam[] = [];
       for (const u of uses) {
+        if (u.name !== "propose_changes") onEvent?.({ type: "status", label: statusFor(u.name, u.input) });
         const r = await runTool(host, u.name, u.input);
         if (r.proposal) proposal = r.proposal;
         results.push({ type: "tool_result", tool_use_id: u.id, content: r.result });
@@ -168,7 +187,10 @@ async function runClaude({ key, model, system, history, host, images = [] }: Par
       if (proposal) {
         // Let it say one short line about the proposal, then stop.
         const wrap = await client.messages.stream({ model, max_tokens: 2000, system, tools, tool_choice: { type: "none" } as any, messages }).finalMessage();
-        for (const b of wrap.content) if (b.type === "text" && b.text.trim()) texts.push(b.text.trim());
+        for (const b of wrap.content) if (b.type === "text" && b.text.trim()) {
+          onEvent?.({ type: "delta", text: (texts.length ? "\n\n" : "") + b.text.trim() });
+          texts.push(b.text.trim());
+        }
         break;
       }
     }
@@ -182,7 +204,7 @@ async function runClaude({ key, model, system, history, host, images = [] }: Par
   return { text: texts.join("\n\n") || (proposal ? "Here are the changes." : "(no reply)"), proposal };
 }
 
-async function runOpenAI({ key, model, system, history, host, images = [] }: Parameters<typeof runAgent>[0]) {
+async function runOpenAI({ key, model, system, history, host, images = [], onEvent }: Parameters<typeof runAgent>[0]) {
   const tools = TOOLS.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.schema } }));
   const messages: any[] = [
     { role: "system", content: system },
@@ -210,19 +232,26 @@ async function runOpenAI({ key, model, system, history, host, images = [] }: Par
 
   for (let step = 0; step < MAX_STEPS; step++) {
     const msg = await call();
-    if (msg.content?.trim()) texts.push(msg.content.trim());
+    if (msg.content?.trim()) {
+      onEvent?.({ type: "delta", text: (texts.length ? "\n\n" : "") + msg.content.trim() });
+      texts.push(msg.content.trim());
+    }
     if (!msg.tool_calls?.length) break;
     messages.push(msg);
     for (const tc of msg.tool_calls) {
       let input: any = {};
       try { input = JSON.parse(tc.function.arguments || "{}"); } catch {}
+      onEvent?.({ type: "status", label: statusFor(tc.function.name, input) });
       const r = await runTool(host, tc.function.name, input);
       if (r.proposal) proposal = r.proposal;
       messages.push({ role: "tool", tool_call_id: tc.id, content: r.result });
     }
     if (proposal) {
       const wrap = await call({ tool_choice: "none" });
-      if (wrap.content?.trim()) texts.push(wrap.content.trim());
+      if (wrap.content?.trim()) {
+        onEvent?.({ type: "delta", text: (texts.length ? "\n\n" : "") + wrap.content.trim() });
+        texts.push(wrap.content.trim());
+      }
       break;
     }
   }

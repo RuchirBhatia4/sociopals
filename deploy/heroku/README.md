@@ -121,7 +121,7 @@ New database changes are applied automatically by the release step.
 ## Good to know
 - **Backups:** `heroku pg:backups:capture` takes one now; `heroku pg:backups:schedule --at '04:00 America/Los_Angeles'` makes them nightly.
 - **Memory:** Basic dynos have 512 MB. If logs show `R14 (Memory quota exceeded)`, tell me and we'll trim it before considering a bigger dyno.
-- **30-second limit:** Heroku ends any single web request after 30 s. Chat, uploads and project-channel AI answers are fine (the AI answer streams separately). The AI chat inside a *task* panel waits for the whole answer, so a very long answer could be cut off; tell me if you see that and I'll make it stream too.
+- **30-second limit:** Heroku ends a web request that sends nothing for 30 s. Both AI features stream their answers (and the task-panel AI sends a keep-alive every 10 s while it reads code), so long answers aren't cut off.
 - **Code runner** (C, C++, Java, Go, Rust…): Heroku can't run its Docker sandbox. Put it on Oracle Always Free
   later (deploy/code-runner/README.md). Python and JavaScript still run in the browser.
 - **After 24 months:** the credit ends and Heroku starts charging. Before then, move to your own server

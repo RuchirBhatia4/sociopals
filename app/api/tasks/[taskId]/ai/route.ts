@@ -36,7 +36,6 @@ export async function POST(req: Request, { params }: { params: { taskId: string 
   if (!profile) return new NextResponse("Unauthorized", { status: 401 });
   const ctx = await load(profile.id, params.taskId);
   if (!ctx) return new NextResponse("Not found", { status: 404 });
-  const { task, channel } = ctx;
 
   const { message, aiKeyId } = await req.json();
   const text = String(message || "").trim().slice(0, 8000);
@@ -46,9 +45,44 @@ export async function POST(req: Request, { params }: { params: { taskId: string 
   if (!key) return NextResponse.json({ error: "Pick an AI first" }, { status: 400 });
   if (key.profileId !== profile.id) return NextResponse.json({ error: "Only its owner can use that AI. Add your own key in Settings → AI keys." }, { status: 403 });
 
+  // The answer streams back as lines of JSON so it shows up as it's written. Heroku closes requests
+  // with no bytes for 30s (55s once started), so a keep-alive line goes out every 10s while the AI works.
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    async start(controller) {
+      let open = true;
+      const send = (event: object) => {
+        if (!open) return;
+        try { controller.enqueue(encoder.encode(JSON.stringify(event) + "\n")); } catch { open = false; }
+      };
+      const ping = setInterval(() => send({ type: "ping" }), 10_000);
+      try {
+        send(await answer(profile.id, text, key, ctx, send));
+      } catch (e) {
+        if (e instanceof AiError || e instanceof GithubError) send({ type: "error", error: e.message });
+        else {
+          console.log("[TASK_AI]", e);
+          send({ type: "error", error: "The AI request failed. Try again." });
+        }
+      } finally {
+        clearInterval(ping);
+        if (open) try { controller.close(); } catch {}
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no" },
+  });
+}
+
+type Ctx = NonNullable<Awaited<ReturnType<typeof load>>>;
+type Key = NonNullable<Awaited<ReturnType<typeof db.aiKey.findUnique>>>;
+
+/** Builds the context, runs the AI and saves both sides of the exchange. Progress goes out through send. */
+async function answer(profileId: string, text: string, key: Key, { task, channel }: Ctx, send: (event: object) => void) {
   // Repo access through your own GitHub; without it the AI just can't look at files.
   const repo = repoOf(channel);
-  const gh = await githubTokenFor(profile.id);
+  const gh = await githubTokenFor(profileId);
   const ref = task.branch ?? repo?.defaultBranch ?? "main";
   let files: string[] | null = null;
   const host = {
@@ -110,7 +144,7 @@ export async function POST(req: Request, { params }: { params: { taskId: string 
   ].filter(Boolean).join("\n\n");
 
   const past = await db.taskAiMessage.findMany({
-    where: { taskId: task.id, profileId: profile.id },
+    where: { taskId: task.id, profileId },
     orderBy: { createdAt: "desc" },
     take: 20,
   });
@@ -122,9 +156,10 @@ export async function POST(req: Request, { params }: { params: { taskId: string 
     { role: "user", content: text },
   ];
 
-  const userMsg = await db.taskAiMessage.create({ data: { taskId: task.id, profileId: profile.id, role: "user", content: text } });
+  const userMsg = await db.taskAiMessage.create({ data: { taskId: task.id, profileId, role: "user", content: text } });
+  send({ type: "user", message: userMsg });
   try {
-    const out = await runAgent({ provider: key.provider, key: decrypt(key.keyEnc), model: key.model, system, history, host, images });
+    const out = await runAgent({ provider: key.provider, key: decrypt(key.keyEnc), model: key.model, system, history, host, images, onEvent: send });
     let proposal: Prisma.InputJsonValue | undefined;
     if (out.proposal) {
       // Keep the original files beside the new ones so the diff can be shown.
@@ -134,16 +169,15 @@ export async function POST(req: Request, { params }: { params: { taskId: string 
       proposal = { summary: out.proposal.summary, files: withOriginals } as unknown as Prisma.InputJsonValue;
     }
     const reply = await db.taskAiMessage.create({
-      data: { taskId: task.id, profileId: profile.id, role: "assistant", content: out.text, aiLabel: `${key.label} · ${key.model}`, proposal },
+      data: { taskId: task.id, profileId, role: "assistant", content: out.text, aiLabel: `${key.label} · ${key.model}`, proposal },
     });
-    return NextResponse.json({ user: userMsg, reply });
+    return { type: "done", user: userMsg, reply };
   } catch (e) {
     await db.taskAiMessage.delete({ where: { id: userMsg.id } }).catch(() => {});
-    if (e instanceof AiError || e instanceof GithubError) return NextResponse.json({ error: e.message }, { status: e.status });
-    console.log("[TASK_AI]", e);
-    return NextResponse.json({ error: "The AI request failed. Try again." }, { status: 500 });
+    throw e;
   }
 }
+
 
 const TEXT_EXT = /\.(txt|md|markdown|csv|json|ya?ml|xml|html?|css|scss|js|jsx|ts|tsx|py|java|c|cc|cpp|h|hpp|go|rs|rb|php|sh|sql|kt|swift|cs|toml|ini|env\.example)$/i;
 function isTextLike(name: string, type: string) {

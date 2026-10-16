@@ -1,6 +1,5 @@
 "use client";
 
-import axios from "axios";
 import { formatDistanceToNowStrict } from "date-fns";
 import {
   Bot, Check, ChevronDown, ClipboardList, Copy, ExternalLink, GitBranch, GitMerge, GitPullRequest, KeyRound, Loader2, Lock, SendHorizontal, Sparkles, Trash2,
@@ -56,8 +55,10 @@ export const TaskPanel = ({ channelId, taskId }: { channelId: string; taskId: st
   });
   const [prompt, setPrompt] = useState("");
   const [thinking, setThinking] = useState(false);
+  // the answer as it streams in, and what the AI is doing between bits of answer
+  const [live, setLive] = useState<{ text: string; status: string | null } | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
-  useEffect(() => { bottom.current?.scrollIntoView({ block: "end" }); }, [chat.length, thinking]);
+  useEffect(() => { bottom.current?.scrollIntoView({ block: "end" }); }, [chat.length, thinking, live?.text.length, live?.status]);
 
   if (!project) return <PanelShell title="Task"><div className="p-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div></PanelShell>;
   if (!task) return <PanelShell title="Task"><p className="p-6 text-sm text-muted-foreground">This task no longer exists.</p></PanelShell>;
@@ -87,15 +88,45 @@ export const TaskPanel = ({ channelId, taskId }: { channelId: string; taskId: st
     setThinking(true);
     const optimistic: AiMsg = { id: `tmp-${Date.now()}`, role: "user", content: text, aiLabel: null, proposal: null, appliedAt: null, commitSha: null, createdAt: new Date().toISOString() };
     qc.setQueryData<AiMsg[]>(["task-ai", taskId], (old = []) => [...old, optimistic]);
+    setLive({ text: "", status: null });
     try {
-      const { data } = await axios.post(`/api/tasks/${taskId}/ai`, { message: text, aiKeyId: ai.id }, { timeout: 300_000 });
-      qc.setQueryData<AiMsg[]>(["task-ai", taskId], (old = []) => [...old.filter((m) => m.id !== optimistic.id), data.user, data.reply]);
+      const res = await fetch(`/api/tasks/${taskId}/ai`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, aiKeyId: ai.id }),
+      });
+      if (!res.ok || !res.body) throw new Error((await res.json().catch(() => null))?.error ?? "The AI request failed");
+      // One JSON event per line: user, delta, status, ping, then done or error.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let finished = false;
+      while (!finished) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const ev = JSON.parse(line);
+          if (ev.type === "delta") setLive((l) => ({ text: (l?.text ?? "") + ev.text, status: null }));
+          else if (ev.type === "status") setLive((l) => ({ text: l?.text ?? "", status: ev.label }));
+          else if (ev.type === "error") throw new Error(ev.error);
+          else if (ev.type === "done") {
+            qc.setQueryData<AiMsg[]>(["task-ai", taskId], (old = []) => [...old.filter((m) => m.id !== optimistic.id), ev.user, ev.reply]);
+            finished = true;
+          }
+        }
+      }
+      if (!finished) throw new Error("The connection dropped before the answer finished. Try again.");
     } catch (e: any) {
       qc.setQueryData<AiMsg[]>(["task-ai", taskId], (old = []) => old.filter((m) => m.id !== optimistic.id));
       setPrompt(text);
-      toast({ title: e?.response?.data?.error ?? "The AI request failed", tone: "error" });
+      toast({ title: e?.message ?? "The AI request failed", tone: "error" });
     } finally {
       setThinking(false);
+      setLive(null);
     }
   };
 
@@ -290,8 +321,14 @@ export const TaskPanel = ({ channelId, taskId }: { channelId: string; taskId: st
                 </div>
               )
             )}
-            {thinking && (
-              <p className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {ai?.label ?? "AI"} is reading the code…</p>
+            {thinking && live?.text && (
+              <div className="mr-2">
+                <p className="text-[11px] text-muted-foreground mb-1 flex items-center gap-1"><Sparkles className="h-3 w-3 text-violet-300" /> {ai?.label ?? "AI"}</p>
+                <div className="text-sm text-foreground/90 break-words leading-relaxed">{renderMessage(live.text, {})}</div>
+              </div>
+            )}
+            {thinking && (live?.status || !live?.text) && (
+              <p className="text-xs text-muted-foreground flex items-center gap-2"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {live?.status ? `${live.status}…` : `${ai?.label ?? "AI"} is reading the code…`}</p>
             )}
             <div ref={bottom} />
           </div>
