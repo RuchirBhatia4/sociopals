@@ -16,7 +16,8 @@ async function manager(profileId: string, channelId: string) {
   return { channel, member };
 }
 
-const urlFor = (req: Request, id: string, token: string) => `${new URL(req.url).origin}/api/hooks/${id}/${token}`;
+// Behind Heroku the request URL can name the internal host, so prefer the public address.
+const urlFor = (req: Request, id: string, token: string) => `${process.env.NEXT_PUBLIC_SITE_URL || new URL(req.url).origin}/api/hooks/${id}/${token}`;
 
 /** Webhooks for a channel (Manage webhooks): GET ?channelId= */
 export async function GET(req: Request) {
