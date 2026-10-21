@@ -42,16 +42,23 @@ export const CodeEditor = forwardRef<CodeEditorHandle, {
     if (gutter.current) gutter.current.scrollTop = ta.current.scrollTop;
   };
 
-  /** Replace the selection and put the caret at start+caret. */
-  const edit = (start: number, end: number, insert: string, caretFrom: number, caretTo = caretFrom) => {
-    const next = value.slice(0, start) + insert + value.slice(end);
+  /**
+   * Replace a range and place the caret, straight on the textarea. Working from the
+   * DOM (not the last rendered value) and moving the caret immediately keeps fast
+   * typing and pastes intact: keys that arrive before React re-renders used to be
+   * lost or land where the caret was about to be moved from.
+   */
+  const edit = (el: HTMLTextAreaElement, start: number, end: number, insert: string, caretFrom: number, caretTo = caretFrom) => {
+    const next = el.value.slice(0, start) + insert + el.value.slice(end);
+    el.value = next;
+    el.setSelectionRange(caretFrom, caretTo);
     onChange(next);
-    requestAnimationFrame(() => ta.current?.setSelectionRange(caretFrom, caretTo));
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const el = e.currentTarget;
     const { selectionStart: s, selectionEnd: t } = el;
+    const value = el.value;
 
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); onSubmit(); return; }
     if (e.key === "Escape") { e.preventDefault(); onClose(); return; }
@@ -61,7 +68,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, {
     if (e.key === "Tab") {
       e.preventDefault();
       const lineStart = value.lastIndexOf("\n", s - 1) + 1;
-      if (s === t && !e.shiftKey) { edit(s, t, INDENT, s + INDENT.length); return; }
+      if (s === t && !e.shiftKey) { edit(el, s, t, INDENT, s + INDENT.length); return; }
       // indent / outdent every selected line
       const block = value.slice(lineStart, t);
       const changed = e.shiftKey
@@ -69,7 +76,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, {
         : block.split("\n").map((l) => INDENT + l);
       const joined = changed.join("\n");
       const firstDelta = e.shiftKey ? -(block.split("\n")[0].length - changed[0].length) : INDENT.length;
-      edit(lineStart, t, joined, Math.max(lineStart, s + firstDelta), lineStart + joined.length);
+      edit(el, lineStart, t, joined, Math.max(lineStart, s + firstDelta), lineStart + joined.length);
       return;
     }
 
@@ -83,10 +90,10 @@ export const CodeEditor = forwardRef<CodeEditorHandle, {
       if (opens && after && PAIRS[before] === after) {
         // {|} -> {\n  |\n}
         const insert = "\n" + indent + INDENT + "\n" + indent;
-        edit(s, t, insert, s + 1 + indent.length + INDENT.length);
+        edit(el, s, t, insert, s + 1 + indent.length + INDENT.length);
       } else {
         const insert = "\n" + indent + (opens ? INDENT : "");
-        edit(s, t, insert, s + insert.length);
+        edit(el, s, t, insert, s + insert.length);
       }
       return;
     }
@@ -94,13 +101,13 @@ export const CodeEditor = forwardRef<CodeEditorHandle, {
     if (PAIRS[e.key] && !e.metaKey && !e.ctrlKey) {
       const isQuote = e.key === PAIRS[e.key];
       // wrap a selection, or add the closing partner when the next char is blank
-      if (s !== t) { e.preventDefault(); edit(s, t, e.key + value.slice(s, t) + PAIRS[e.key], s + 1, t + 1); return; }
+      if (s !== t) { e.preventDefault(); edit(el, s, t, e.key + value.slice(s, t) + PAIRS[e.key], s + 1, t + 1); return; }
       const next = value[s];
-      if (isQuote && next === e.key) { e.preventDefault(); edit(s, s, "", s + 1); return; }
-      if (!next || /[\s)\]}]/.test(next)) { e.preventDefault(); edit(s, t, e.key + PAIRS[e.key], s + 1); return; }
+      if (isQuote && next === e.key) { e.preventDefault(); edit(el, s, s, "", s + 1); return; }
+      if (!next || /[\s)\]}]/.test(next)) { e.preventDefault(); edit(el, s, t, e.key + PAIRS[e.key], s + 1); return; }
     }
-    if ([")", "]", "}"].includes(e.key) && value[s] === e.key && s === t) { e.preventDefault(); edit(s, s, "", s + 1); return; }
-    if (e.key === "Backspace" && s === t && s > 0 && PAIRS[value[s - 1]] === value[s]) { e.preventDefault(); edit(s - 1, s + 1, "", s - 1); return; }
+    if ([")", "]", "}"].includes(e.key) && value[s] === e.key && s === t) { e.preventDefault(); edit(el, s, s, "", s + 1); return; }
+    if (e.key === "Backspace" && s === t && s > 0 && PAIRS[value[s - 1]] === value[s]) { e.preventDefault(); edit(el, s - 1, s + 1, "", s - 1); return; }
   };
 
   const shown = lang === "auto" ? (detected ? `Auto · ${labelFor(detected)}` : "Auto-detect") : labelFor(lang);
